@@ -8,11 +8,15 @@ import uuid
 import os
 from typing import Dict, Optional, List
 from datetime import datetime
+from pathlib import Path
 from pydantic import BaseModel
 import subprocess
 import platform
 import pytz
 import logging
+import shutil
+import sys
+import time
 
 # Configure logging
 LOG_LEVEL_NAME = os.environ.get("PC1_LOG_LEVEL", "WARNING").upper()
@@ -2027,19 +2031,85 @@ async def check_for_updates():
         }
 
 
+def _update_requirements_path(project_root: Path, is_dev: bool) -> Path:
+    pi_requirements = project_root / "requirements-pi.txt"
+    if not is_dev and pi_requirements.exists():
+        return pi_requirements
+    return project_root / "requirements.txt"
+
+
+def _ensure_update_virtualenv(project_root: Path) -> Path:
+    venv_dir = project_root / ".venv"
+    venv_python = venv_dir / "bin" / "python"
+    if venv_python.exists():
+        return venv_python
+
+    bootstrap_python = shutil.which("python3") or sys.executable
+    logger.warning(
+        "Update install missing repo virtualenv; recreating %s using %s",
+        venv_dir,
+        bootstrap_python,
+    )
+
+    create_result = subprocess.run(
+        [bootstrap_python, "-m", "venv", str(venv_dir)],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if create_result.returncode != 0 or not venv_python.exists():
+        detail = (create_result.stderr or create_result.stdout or "").strip()[:500]
+        raise RuntimeError(
+            "Could not create application virtual environment"
+            + (f": {detail}" if detail else "")
+        )
+
+    return venv_python
+
+
+def _install_update_dependencies(
+    project_root: Path, is_dev: bool
+) -> subprocess.CompletedProcess:
+    requirements_path = _update_requirements_path(project_root, is_dev)
+    if not requirements_path.exists():
+        raise RuntimeError(f"Missing dependency file: {requirements_path.name}")
+
+    python_exec = _ensure_update_virtualenv(project_root)
+    return subprocess.run(
+        [str(python_exec), "-m", "pip", "install", "-r", str(requirements_path)],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=300,  # 5 minutes specifically for slow installs on Pi
+    )
+
+
+def _validate_production_update_bundle(source_dir: Path) -> None:
+    required_paths = [
+        source_dir / "web" / "dist" / "index.html",
+        source_dir / "run.sh",
+        source_dir / "app",
+    ]
+    missing = [path for path in required_paths if not path.exists()]
+    if missing:
+        missing_list = ", ".join(str(path.relative_to(source_dir)) for path in missing)
+        raise RuntimeError(
+            "Production update bundle is missing required runtime assets: "
+            f"{missing_list}"
+        )
+
+
 @app.post("/api/system/updates/install", dependencies=[Depends(require_admin_access)])
 async def install_updates():
     """
     Install available updates and restart the service.
     """
     try:
-        import subprocess
         import hashlib
         import requests
         import tarfile
-        import shutil
         import tempfile
-        from pathlib import Path
 
         # Get the project root directory
         project_root = Path(__file__).parent.parent
@@ -2111,15 +2181,6 @@ async def install_updates():
                     ),
                     None,
                 )
-                if tar_asset is None:
-                    tar_asset = next(
-                        (
-                            asset
-                            for asset in assets
-                            if str(asset.get("name", "")).endswith(".tar.gz")
-                        ),
-                        None,
-                    )
 
                 tarball_url = ""
                 tarball_name = ""
@@ -2127,9 +2188,14 @@ async def install_updates():
                     tarball_url = (tar_asset.get("browser_download_url") or "").strip()
                     tarball_name = str(tar_asset.get("name") or "").strip()
                 else:
-                    # Fallback for older releases without explicit artifact assets.
-                    tarball_url = (release_data.get("tarball_url") or "").strip()
-                    tarball_name = f"pc1-{tag_name}.tar.gz"
+                    return {
+                        "success": False,
+                        "message": "Update failed",
+                        "error": (
+                            "Latest release is missing the required production bundle "
+                            f"asset '{preferred_asset_name}'."
+                        ),
+                    }
 
                 if not tarball_url:
                     raise ValueError("No update package URL found in latest release")
@@ -2210,6 +2276,7 @@ async def install_updates():
                         if len(extracted_items) == 1 and extracted_items[0].is_dir()
                         else extract_dir
                     )
+                    _validate_production_update_bundle(source_dir)
 
                     config_backup = project_root / "config.json.bak"
                     env_backup = project_root / ".env.bak"
@@ -2246,48 +2313,67 @@ async def install_updates():
                     "error": str(e),
                 }
 
-        # Install Python dependencies
-        import sys
-
-        # Use the current python executable to ensure we use the active venv if present
-        install_result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=300,  # 5 minutes specifically for slow installs on Pi
-        )
+        # Recreate the repo venv if needed and install dependencies there before restart.
+        install_result = _install_update_dependencies(project_root, is_dev=is_dev)
 
         if install_result.returncode != 0:
-            logger.warning(
-                "Dependency install after update returned non-zero exit code: %s",
+            logger.error(
+                "Dependency install after update failed: %s",
                 (install_result.stderr or install_result.stdout or "").strip()[:500],
             )
+            return {
+                "success": False,
+                "message": "Update failed",
+                "error": "Dependency installation failed. The running service was left unchanged.",
+            }
 
-        # Rebuild UI if web directory exists
+        # Dev-mode convenience only: production releases must ship prebuilt web assets.
         web_dir = project_root / "web"
-        if web_dir.exists() and (web_dir / "package.json").exists():
-            try:
-                # Try to rebuild UI (non-blocking, don't fail if npm isn't available)
-                subprocess.run(
-                    ["npm", "ci"],
+        if is_dev and web_dir.exists() and (web_dir / "package.json").exists():
+            npm_exec = shutil.which("npm")
+            if not npm_exec:
+                logger.info(
+                    "Skipping optional dev UI rebuild during update because npm is unavailable"
+                )
+            else:
+                npm_ci_result = subprocess.run(
+                    [npm_exec, "ci"],
                     cwd=web_dir,
                     capture_output=True,
                     timeout=120,
                     check=False,
                 )
-                subprocess.run(
-                    ["npm", "run", "build"],
+                if npm_ci_result.returncode != 0:
+                    logger.warning(
+                        "Optional UI npm ci failed during update: %s",
+                        (npm_ci_result.stderr or npm_ci_result.stdout or "").strip()[
+                            :500
+                        ],
+                    )
+                npm_build_result = subprocess.run(
+                    [npm_exec, "run", "build"],
                     cwd=web_dir,
                     capture_output=True,
                     timeout=120,
                     check=False,
                 )
-            except Exception:
-                logger.exception("Optional UI rebuild failed during update")
+                if npm_build_result.returncode != 0:
+                    logger.warning(
+                        "Optional UI build failed during update: %s",
+                        (npm_build_result.stderr or npm_build_result.stdout or "").strip()[
+                            :500
+                        ],
+                    )
 
         # Restart the service
         if platform.system() == "Linux":
+            subprocess.run(
+                ["sudo", "systemctl", "reset-failed", "pc-1.service"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
             restart_result = subprocess.run(
                 ["sudo", "systemctl", "restart", "pc-1.service"],
                 capture_output=True,
@@ -2321,8 +2407,6 @@ async def install_updates():
                     pass
 
             # Give the service a moment to start up
-            import time
-
             time.sleep(1)
 
         return {

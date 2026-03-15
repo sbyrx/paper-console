@@ -1,9 +1,13 @@
 """Regression tests for hardware/network failure paths."""
 
+import asyncio
 import subprocess
+import sys
 import time
 import imaplib
+import types
 
+import app.main as main_module
 import app.wifi_manager as wifi_manager
 from app.drivers.printer_serial import PrinterDriver
 from app.modules import email_client
@@ -194,3 +198,150 @@ def test_factory_reset_success_path(monkeypatch):
     assert result["wifi_cleared"] is True
     assert result["reboot_requested"] is True
     assert result["errors"] == []
+
+
+def test_install_update_dependencies_recreates_missing_repo_venv(
+    monkeypatch, tmp_path
+):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    (project_root / "requirements-pi.txt").write_text(
+        "-r requirements.txt\nRPi.GPIO\n",
+        encoding="utf-8",
+    )
+
+    commands = []
+
+    def fake_run(
+        cmd, cwd=None, capture_output=False, text=False, timeout=None, check=False
+    ):  # noqa: ARG001
+        commands.append(cmd)
+        if cmd[1:3] == ["-m", "venv"]:
+            venv_python = project_root / ".venv" / "bin" / "python"
+            venv_python.parent.mkdir(parents=True, exist_ok=True)
+            venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="", stderr=""
+            )
+        if cmd[1:4] == ["-m", "pip", "install"]:
+            assert cmd[-1] == str(project_root / "requirements-pi.txt")
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="ok", stderr=""
+            )
+        raise AssertionError(f"Unexpected subprocess command: {cmd}")
+
+    monkeypatch.setattr(
+        main_module.shutil,
+        "which",
+        lambda name: "/usr/bin/python3" if name == "python3" else None,
+    )
+    monkeypatch.setattr(main_module.subprocess, "run", fake_run)
+
+    result = main_module._install_update_dependencies(project_root, is_dev=False)
+
+    assert result.returncode == 0
+    assert any(cmd[1:3] == ["-m", "venv"] for cmd in commands)
+    assert any(
+        cmd[0] == str(project_root / ".venv" / "bin" / "python")
+        and cmd[1:4] == ["-m", "pip", "install"]
+        for cmd in commands
+    )
+
+
+def test_install_updates_does_not_restart_service_when_dependency_install_fails(
+    monkeypatch, tmp_path
+):
+    project_root = tmp_path / "project"
+    (project_root / "app").mkdir(parents=True)
+    (project_root / ".git").mkdir()
+    fake_main_path = project_root / "app" / "main.py"
+    fake_main_path.write_text("# test stub\n", encoding="utf-8")
+
+    commands = []
+
+    def fake_run(
+        cmd, cwd=None, capture_output=False, text=False, timeout=None, check=False
+    ):  # noqa: ARG001
+        commands.append(cmd)
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="main\n", stderr=""
+            )
+        if cmd[:3] == ["git", "pull", "origin"]:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="Already up to date.\n", stderr=""
+            )
+        raise AssertionError(f"Unexpected subprocess command: {cmd}")
+
+    monkeypatch.setattr(main_module, "__file__", str(fake_main_path))
+    monkeypatch.setattr(main_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        main_module,
+        "_install_update_dependencies",
+        lambda project_root, is_dev: subprocess.CompletedProcess(
+            args=["python", "-m", "pip"], returncode=1, stdout="", stderr="pip failed"
+        ),
+    )
+    monkeypatch.setattr(main_module.time, "sleep", lambda *_: None)
+
+    result = asyncio.run(main_module.install_updates())
+
+    assert result["success"] is False
+    assert "Dependency installation failed" in result["error"]
+    assert not any(cmd[:3] == ["sudo", "systemctl", "restart"] for cmd in commands)
+
+
+def test_validate_production_update_bundle_rejects_missing_web_dist(tmp_path):
+    source_dir = tmp_path / "bundle"
+    (source_dir / "app").mkdir(parents=True)
+    (source_dir / "run.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+
+    try:
+        main_module._validate_production_update_bundle(source_dir)
+        raise AssertionError("Expected production bundle validation to fail")
+    except RuntimeError as exc:
+        assert "web/dist/index.html" in str(exc)
+
+
+def test_install_updates_requires_explicit_production_release_asset(
+    monkeypatch, tmp_path
+):
+    project_root = tmp_path / "project"
+    (project_root / "app").mkdir(parents=True)
+    fake_main_path = project_root / "app" / "main.py"
+    fake_main_path.write_text("# test stub\n", encoding="utf-8")
+
+    class DummyResponse:
+        def __init__(self, status_code=200, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {}
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError("http error")
+
+        def json(self):
+            return self._payload
+
+    release_payload = {
+        "tag_name": "v9.9.9",
+        "assets": [{"name": "SHA256SUMS", "browser_download_url": "https://example.test/SHA256SUMS"}],
+        "tarball_url": "https://example.test/source.tar.gz",
+    }
+
+    def fake_requests_get(url, headers=None, timeout=None, stream=False):  # noqa: ARG001
+        assert stream is False
+        return DummyResponse(payload=release_payload)
+
+    monkeypatch.setattr(main_module, "__file__", str(fake_main_path))
+    monkeypatch.setitem(
+        sys.modules,
+        "requests",
+        types.SimpleNamespace(get=fake_requests_get),
+    )
+
+    result = asyncio.run(main_module.install_updates())
+
+    assert result["success"] is False
+    assert "required production bundle asset" in result["error"]

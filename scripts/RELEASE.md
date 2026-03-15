@@ -58,6 +58,7 @@ Optional hardening:
 
 ## OTA expectations
 
-Production OTA now prefers release asset `pc1-<tag>.tar.gz`. If not found, it falls back to GitHub's source tarball.
+Production OTA requires the explicit release asset `pc1-<tag>.tar.gz`.
 
-Recommended: always attach the explicit `pc1-<tag>.tar.gz` asset so updates do not depend on Node/npm availability on-device.
+This runtime bundle must already include built frontend assets under `web/dist`.
+Production devices do not build the UI on-device and should not depend on Node/npm being installed.
