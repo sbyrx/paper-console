@@ -9,7 +9,7 @@
 * **No screens:** output is physical thermal paper.
 * **No subscriptions:** user-owned API keys or local algorithms.
 * **Quality materials:** walnut, brass, and archival-grade paper.
-* **Universal channels:** fully configurable channels (Astronomy, Calendar Integration, Email Integration, On This Day in History, Maze Generator, News, Quote of the Day, RSS Feeds, Sudoku Generator, System Monitor, Text/Note, Weather, Custom Webhooks)
+* **Universal channels:** fully configurable channels (Adventure, Astronomy, Calendar, Email, History, Journal Prompt, Maze, News, QR Code, Quotes, RSS, Sudoku, System Monitor, Text / Note, Weather, Webhook)
 
 ![PC-1 Front View](images/pc-1_front.jpg)
 *Front view showing the brass rotary dial, push button, and thermal paper output*
@@ -20,7 +20,6 @@
 
 Run the entire system on your PC without hardware to test logic and see "printer" output in the terminal.
 Use a Unix-like shell for project commands: Linux, macOS, or WSL on Windows.
-If you're on Windows, run repo commands from WSL rather than PowerShell or Command Prompt.
 
 **Backend:**
 
@@ -148,7 +147,7 @@ cd web && npm install
 
 ## 3. Configuration
 
-Configuration is handled entirely via the **Web UI** at `http://pc-1.local` (or `http://localhost:8000` if running locally).
+Configuration is handled entirely via the **Web UI** at `http://pc-1.local` (or `http://localhost:8000`).
 
 ### Global Settings
 * **Location:** City name, Latitude, Longitude, Timezone (with search functionality)
@@ -166,7 +165,7 @@ Configuration is handled entirely via the **Web UI** at `http://pc-1.local` (or 
 
 Each module is an independent instance with its own configuration. See [Architecture & Modules](#4-architecture--modules) for detailed information.
 
-Available modules: **News API**, **RSS Feeds**, **Weather**, **Email Inbox**, **Sudoku**, **Maze**, **Astronomy**, **Calendar**, **Webhook**, **Text / Note**, **Quotes**, **History**.
+Available modules: **News API**, **RSS Feeds**, **Weather**, **Email Inbox**, **Sudoku**, **Maze**, **Adventure**, **Astronomy**, **Calendar**, **Webhook**, **QR Code**, **Text / Note**, **Quotes**, **Journal Prompt**, **History**, **System Monitor**.
 
 ### Settings Storage
 * **Settings File:** `config.json` (auto-saved, gitignored)
@@ -218,99 +217,96 @@ See `scripts/RELEASE.md` for the full release/tag/publish workflow.
 ```
 paper-console/
 ├── app/
-│   ├── main.py            # Entry point & Event Router
-│   ├── config.py          # Pydantic Models & Settings Manager
+│   ├── main.py                 # FastAPI app, dial/button, print orchestration
+│   ├── config.py               # Settings & module/channel models
+│   ├── module_registry.py      # @register_module metadata & validation
+│   ├── auth.py
+│   ├── factory_reset.py
+│   ├── hardware.py             # Printer + dial singletons
+│   ├── selection_mode.py       # Dial-driven interactive flows
+│   ├── utils.py
+│   ├── wifi_manager.py
+│   ├── location_lookup.py
+│   ├── data/                   # Bundled corpora (history, quotes, adventure, journal prompts, geonames)
 │   ├── drivers/
-│   │   ├── printer_serial.py  # Hardware printer driver
-│   │   ├── printer_mock.py    # Console "Printer" (dev)
-│   │   ├── dial_gpio.py       # Hardware dial driver
-│   │   └── dial_mock.py       # Virtual Rotary Switch (dev)
-│   ├── modules/
-│   │   ├── news.py        # NewsAPI Logic
-│   │   ├── rss.py         # RSS Feed Logic
-│   │   ├── weather.py     # Weather Logic (Open-Meteo)
-│   │   ├── astronomy.py  # Local Astronomy Logic
-│   │   ├── email_client.py# IMAP Logic
-│   │   ├── sudoku.py      # Sudoku Logic
-│   │   ├── maze.py        # Maze Generation Logic
-│   │   ├── webhook.py     # Generic API/Webhook Logic
-│   │   ├── text.py        # Static Text Logic
-│   │   ├── calendar.py    # iCal Calendar Parsing Logic
-│   │   ├── quotes.py      # Quotes Logic
-│   │   └── history.py     # Historical Events Logic
-├── web/                   # React + Vite + Tailwind CSS Frontend
+│   │   ├── printer_serial.py   # Thermal printer (hardware)
+│   │   ├── printer_mock.py     # Console / capture (dev)
+│   │   ├── dial_gpio.py / dial_mock.py
+│   │   ├── button_gpio.py / button_mock.py
+│   │   └── gpio_ioctl.py
+│   ├── modules/                # One file per printable module type (+ helpers)
+│   │   ├── adventure.py        # Interactive CYOA (dial)
+│   │   ├── astronomy.py
+│   │   ├── calendar.py
+│   │   ├── email_client.py
+│   │   ├── history.py
+│   │   ├── journal_prompts.py
+│   │   ├── maze.py
+│   │   ├── news.py
+│   │   ├── qrcode_print.py
+│   │   ├── quotes.py
+│   │   ├── rss.py
+│   │   ├── settings_menu.py    # Quick actions / factory reset receipts (not on channel picker)
+│   │   ├── sudoku.py
+│   │   ├── system_monitor.py
+│   │   ├── text.py
+│   │   ├── weather.py
+│   │   └── webhook.py
+│   └── routers/
+│       └── wifi.py
+├── web/                        # React + Vite + Tailwind (settings UI)
 ├── scripts/
-│   ├── setup_pi.sh            # Setup script (Hostname, Nginx, Systemd)
-│   └── wifi_ap_nmcli.sh      # WiFi AP mode manager
-├── testing/
-│   ├── test_core.py          # Pytest core suite
-│   ├── run_tests.sh          # Bash test runner
-│   └── README.md             # Testing notes
-├── run.sh                 # Development server launcher
-├── requirements.txt       # Python dependencies
-├── requirements-dev.txt   # Dev/test dependencies
-└── readme.md              # This file
+│   ├── setup_pi.sh
+│   ├── wifi_ap_nmcli.sh
+│   ├── release_build.py
+│   ├── RELEASE.md, DEPLOYMENT.md
+│   ├── prepare_golden_image.sh
+│   ├── deploy_automated.py
+│   └── validate_icons.py
+├── testing/                    # Pytest, print/UI render helpers, galleries
+├── images/                     # Product photos (e.g. readme hero)
+├── .github/workflows/
+├── AGENTS.md
+├── run.sh
+├── requirements.txt
+├── requirements-dev.txt
+├── requirements-pi.txt
+└── readme.md
 ```
 
 ### Module Details
 
-**News API:**
-* Sources: NewsAPI (top headlines)
-* Requires: NewsAPI key
+**News API:** NewsAPI top headlines; requires API key.
 
-**RSS Feeds:**
-* Sources: Custom RSS feeds (unlimited)
-* Supports: Any valid RSS feed URL
+**RSS Feeds:** Custom RSS URLs; fetches and prints article blocks with optional QR.
 
-**Weather:**
-* Sources: Open-Meteo API (no key required)
-* Uses: Global location from settings
+**Weather:** Open-Meteo; uses global location from settings.
 
-**Email Inbox:**
-* Protocol: IMAP
-* Auto-Poll: Configurable interval (default 30s)
-* Features: Prints unread emails automatically
+**Email Inbox:** IMAP; configurable poll interval; prints unread messages.
 
-**Sudoku:**
-* Difficulty: Medium or Hard
-* Algorithm: Backtracking solver with random generation
+**Sudoku:** Easy / Medium / Hard; generated puzzle printed as bitmap grid.
 
-**Maze:**
-* Difficulty: Medium or Hard
-* Algorithm: Recursive backtracking maze generation
-* Features: Printable maze with start/end markers
+**Maze:** Easy / Medium / Hard; printable maze (bitmap) with start/end markers.
 
-**Astronomy:**
-* Features: Sunrise, Sunset, Moon Phase/Illumination
-* Uses: Global location from settings
+**Adventure:** Interactive choose-your-own-adventure; uses dial + button (prints story nodes, exits to normal channel use when done).
 
-**Calendar:**
-* Sources: iCal URLs (Google Calendar, Apple Calendar, etc.)
-* Features: 
-  * Supports public and secret iCal URLs
-  * Merges multiple calendars
-  * Handles recurring events
-  * Timezone-aware scheduling
-  * Event expansion (1-7 days ahead)
+**Astronomy:** Sunrise/sunset, moon phase, sun path graphic; uses global location.
 
-**Webhook:**
-* Methods: GET or POST
-* Features: Custom headers, JSON body, JSON path extraction
-* Use Cases: Dad Jokes, Random Facts, IoT Status, Home Assistant triggers, Custom APIs
+**Calendar:** iCal URLs; month/week/day views; recurring events, timezone-aware.
 
-**Text / Note:**
-* Features: Static multi-line text storage
-* Use Cases: WiFi passwords, to-do lists, quick reference notes
+**Webhook:** GET/POST; headers, body, JSON path extraction for custom APIs.
 
-**Quotes:**
-* Sources: Curated database of ~5,000 quotes
-* Features: Random inspirational quotes
-* Database: Auto-downloads from GitHub if not present
+**QR Code:** URLs, WiFi, contact, phone, SMS, email, plain text.
 
-**History:**
-* Sources: Historical events database
-* Features: "On This Day" historical events
-* Database: Auto-downloads from GitHub if not present
+**Text / Note:** Rich text (TipTap JSON): headings, lists, bold/italic, horizontal rules.
+
+**Quotes:** Offline DB of thousands of quotes; random quote per print.
+
+**Journal Prompt:** Offline prompt library; random prompt per print.
+
+**History:** Offline “on this day” events; optional event count in config.
+
+**System Monitor:** Hostname, IP, WiFi, disk/memory bars, uptime, load, CPU temp (where available).
 
 ---
 

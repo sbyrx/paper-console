@@ -4,7 +4,7 @@ import hashlib
 
 import app.modules  # noqa: F401 - triggers module auto-registration
 import app.wifi_manager as wifi_manager
-from app.config import Settings, remove_deprecated_features
+from app.config import Settings
 from app.module_registry import get_all_modules, validate_module_config
 
 
@@ -34,29 +34,6 @@ def test_registry_excludes_removed_modules():
     registry = get_all_modules()
     assert "settings_menu" not in registry
     assert "ai" not in registry
-
-
-def test_remove_deprecated_features_strips_unsupported_assignments():
-    data = {
-        "modules": {
-            "legacy-1": {"id": "legacy-1", "type": "legacy_module", "config": {}},
-            "text-1": {"id": "text-1", "type": "text", "config": {"content": "ok"}},
-        },
-        "channels": {
-            "1": {
-                "modules": [
-                    {"module_id": "legacy-1", "order": 0},
-                    {"module_id": "text-1", "order": 1},
-                ],
-                "schedule": [],
-            }
-        },
-    }
-
-    cleaned = remove_deprecated_features(data)
-    assert "legacy-1" not in cleaned["modules"]
-    assert "text-1" in cleaned["modules"]
-    assert cleaned["channels"]["1"]["modules"] == [{"module_id": "text-1", "order": 1}]
 
 
 def test_ap_password_env_override(monkeypatch):

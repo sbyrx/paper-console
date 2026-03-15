@@ -4,9 +4,7 @@ from datetime import datetime
 import json
 import os
 import uuid
-import re
 import logging
-from pathlib import Path
 
 # Constants
 PRINTER_WIDTH = 42
@@ -320,214 +318,6 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-def migrate_old_config(data: dict) -> dict:
-    """Migrate old config format (channels with single type) to new format (modules + assignments)."""
-    if "modules" in data and data["modules"]:
-        return data
-
-    channels = data.get("channels", {})
-    if not channels:
-        return data
-
-    first_channel = channels.get("1") or channels.get(1)
-    if (
-        first_channel
-        and isinstance(first_channel, dict)
-        and "type" in first_channel
-        and "modules" not in first_channel
-    ):
-        # Migrate old format
-        new_modules = {}
-        new_channels = {}
-
-        for pos, channel_data in channels.items():
-            pos_int = int(pos) if isinstance(pos, str) else pos
-            channel_type = channel_data.get("type", "off")
-            channel_config = channel_data.get("config", {})
-
-            if channel_type == "off":
-                new_channels[pos_int] = ChannelConfig(modules=[])
-            elif channel_type == "news":
-                module_assignments = []
-
-                has_newsapi = channel_config.get(
-                    "enable_newsapi", True
-                ) and channel_config.get("news_api_key")
-                if has_newsapi:
-                    news_module_id = str(uuid.uuid4())
-                    new_modules[news_module_id] = ModuleInstance(
-                        id=news_module_id,
-                        type="news",
-                        name="News API",
-                        config={"news_api_key": channel_config.get("news_api_key", "")},
-                    )
-                    module_assignments.append(
-                        ChannelModuleAssignment(module_id=news_module_id, order=0)
-                    )
-
-                rss_feeds = channel_config.get("rss_feeds", [])
-                if rss_feeds:
-                    rss_module_id = str(uuid.uuid4())
-                    new_modules[rss_module_id] = ModuleInstance(
-                        id=rss_module_id,
-                        type="rss",
-                        name="RSS Feeds",
-                        config={"rss_feeds": rss_feeds},
-                    )
-                    module_assignments.append(
-                        ChannelModuleAssignment(
-                            module_id=rss_module_id, order=1 if has_newsapi else 0
-                        )
-                    )
-
-                if not module_assignments:
-                    new_channels[pos_int] = ChannelConfig(modules=[])
-                else:
-                    new_channels[pos_int] = ChannelConfig(modules=module_assignments)
-            else:
-                module_id = str(uuid.uuid4())
-                module_name = channel_type.title()
-
-                new_modules[module_id] = ModuleInstance(
-                    id=module_id,
-                    type=channel_type,
-                    name=module_name,
-                    config=channel_config,
-                )
-
-                new_channels[pos_int] = ChannelConfig(
-                    modules=[ChannelModuleAssignment(module_id=module_id, order=0)]
-                )
-
-        data["modules"] = {mid: mod.model_dump() for mid, mod in new_modules.items()}
-        data["channels"] = {
-            int(pos): ch.model_dump() for pos, ch in new_channels.items()
-        }
-
-    return data
-
-
-def migrate_games_module_type_to_sudoku(data: dict) -> dict:
-    """Legacy type_id was ``games``; Sudoku is now its own module type ``sudoku``."""
-    modules = data.get("modules")
-    if not isinstance(modules, dict):
-        return data
-    for module_data in modules.values():
-        if isinstance(module_data, dict) and module_data.get("type") == "games":
-            module_data["type"] = "sudoku"
-    return data
-
-
-def migrate_text_module_content(data: dict) -> dict:
-    """Migrate legacy text module markdown strings to TipTap doc JSON."""
-    modules = data.get("modules")
-    if not isinstance(modules, dict):
-        return data
-
-    for module_data in modules.values():
-        if not isinstance(module_data, dict):
-            continue
-        if module_data.get("type") != "text":
-            continue
-
-        config = module_data.get("config")
-        if not isinstance(config, dict):
-            module_data["config"] = {"content_doc": _default_text_content_doc()}
-            continue
-
-        content_doc = config.get("content_doc")
-        is_valid_doc = (
-            isinstance(content_doc, dict)
-            and content_doc.get("type") == "doc"
-            and isinstance(content_doc.get("content"), list)
-        )
-
-        if not is_valid_doc:
-            legacy_content = config.get("content")
-            if isinstance(legacy_content, str) and legacy_content:
-                lines = legacy_content.split("\n")
-                paragraph_nodes = []
-                for line in lines:
-                    if line.strip():
-                        paragraph_nodes.append(
-                            {"type": "paragraph", "content": [{"type": "text", "text": line}]}
-                        )
-                    else:
-                        paragraph_nodes.append({"type": "paragraph"})
-                config["content_doc"] = {
-                    "type": "doc",
-                    "content": paragraph_nodes or [{"type": "paragraph"}],
-                }
-            else:
-                config["content_doc"] = _default_text_content_doc()
-
-        # Remove legacy markdown field after migration.
-        config.pop("content", None)
-
-    return data
-
-
-def remove_deprecated_features(data: dict) -> dict:
-    """Remove deprecated settings/modules from existing configs."""
-    modules = data.get("modules")
-    removed_module_ids = set()
-
-    deprecated_module_types = {"ai", "settings_menu"}
-
-    # Discover currently supported module types from local module source files
-    # to clean up old/removed module types without hardcoding each one.
-    supported_module_types = set()
-    modules_dir = Path(__file__).resolve().parent / "modules"
-    type_id_pattern = re.compile(r"type_id\s*=\s*['\"]([^'\"]+)['\"]")
-    if modules_dir.exists():
-        for module_file in modules_dir.glob("*.py"):
-            if module_file.name.startswith("_"):
-                continue
-            try:
-                content = module_file.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            if "@register_module" not in content:
-                continue
-            supported_module_types.update(type_id_pattern.findall(content))
-
-    if isinstance(modules, dict):
-        for module_id, module_data in list(modules.items()):
-            if not isinstance(module_data, dict):
-                continue
-
-            module_type = module_data.get("type")
-            is_removed_legacy_type = module_type in deprecated_module_types
-            is_unsupported_type = bool(supported_module_types) and (
-                module_type not in supported_module_types
-            )
-
-            if is_removed_legacy_type or is_unsupported_type:
-                removed_module_ids.add(str(module_id))
-                modules.pop(module_id, None)
-
-    if removed_module_ids:
-        channels = data.get("channels")
-        if isinstance(channels, dict):
-            for channel_data in channels.values():
-                if not isinstance(channel_data, dict):
-                    continue
-                assignments = channel_data.get("modules")
-                if not isinstance(assignments, list):
-                    continue
-                channel_data["modules"] = [
-                    assignment
-                    for assignment in assignments
-                    if isinstance(assignment, dict)
-                    and str(assignment.get("module_id")) not in removed_module_ids
-                ]
-
-    if "telegram_bot" in data:
-        data.pop("telegram_bot", None)
-
-    return data
-
-
 def _try_load_config_file(config_path: str) -> Settings | None:
     """Attempt to load config from a specific file path. Returns None on failure."""
     if not os.path.exists(config_path):
@@ -542,12 +332,6 @@ def _try_load_config_file(config_path: str) -> Settings | None:
             if channels and isinstance(channels.get("1"), str):
                 return Settings()
 
-            # Migrate old format to new format if needed
-            data = migrate_old_config(data)
-            data = migrate_games_module_type_to_sudoku(data)
-            data = remove_deprecated_features(data)
-            data = migrate_text_module_content(data)
-
             # Normalize channel keys to integers (JSON loads them as strings)
             if "channels" in data and data["channels"]:
                 normalized_channels = {}
@@ -558,7 +342,7 @@ def _try_load_config_file(config_path: str) -> Settings | None:
                         normalized_channels[key] = value
                 data["channels"] = normalized_channels
 
-            # Ensure time_sync_mode is set (for backward compatibility with old configs)
+            # Default if missing (older JSON)
             if "time_sync_mode" not in data:
                 data["time_sync_mode"] = "manual"
 
