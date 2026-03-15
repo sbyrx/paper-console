@@ -1,6 +1,8 @@
-# Testing (WSL/Linux)
+# Testing
 
-Run the automated suite from WSL/Linux:
+Run the automated suite from a Unix-like shell:
+
+On Windows, use WSL.
 
 ```bash
 ./testing/run_tests.sh
@@ -8,8 +10,10 @@ Run the automated suite from WSL/Linux:
 
 This script will:
 1. Create `.venv` if missing
-2. Install `requirements-dev.txt`
+2. Install `requirements-dev.txt` (local/dev dependencies only)
 3. Run `pytest` against `testing/`
+
+Pi-only GPIO dependencies are installed via `requirements-pi.txt` and are not part of the local test workflow.
 
 Generate console dot-map previews (useful for printer layout debugging):
 

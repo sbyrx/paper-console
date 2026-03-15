@@ -1,4 +1,4 @@
-"""WSL/Linux pytest suite for PC-1 core behaviors."""
+"""Pytest suite for PC-1 core behaviors."""
 
 import hashlib
 

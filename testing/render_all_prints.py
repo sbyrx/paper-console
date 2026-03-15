@@ -41,8 +41,8 @@ class CapturePrinter(SerialPrinterDriver):
     """Serial printer driver that captures raster bitmaps instead of sending."""
 
     def __init__(self, width: int = PRINTER_WIDTH):
-        # Force a non-existent serial port to avoid touching real hardware.
-        super().__init__(width=width, port="/dev/pc1-mock-serial")
+        # Skip serial initialization entirely in offline render mode.
+        super().__init__(width=width, init_serial=False)
         self.captured_bitmaps = []
 
     def _send_bitmap(self, img):  # type: ignore[override]

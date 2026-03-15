@@ -204,24 +204,28 @@ echo "User: $USER_NAME"
 
 # Create/Update virtual environment
 echo "Checking virtual environment..."
-if [ ! -d "$PROJECT_DIR/venv" ]; then
+VENV_DIR="$PROJECT_DIR/.venv"
+
+if [ ! -d "$VENV_DIR" ]; then
     echo "Creating new virtual environment..."
-    sudo -u "$USER_NAME" python3 -m venv "$PROJECT_DIR/venv"
+    sudo -u "$USER_NAME" python3 -m venv "$VENV_DIR"
 fi
 
 # Install/Upgrade dependencies
 echo "Installing Python dependencies..."
-if [ -f "$PROJECT_DIR/requirements.txt" ]; then
-    sudo -u "$USER_NAME" "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+if [ -f "$PROJECT_DIR/requirements-pi.txt" ]; then
+    sudo -u "$USER_NAME" "$VENV_DIR/bin/pip" install -r "$PROJECT_DIR/requirements-pi.txt"
+elif [ -f "$PROJECT_DIR/requirements.txt" ]; then
+    sudo -u "$USER_NAME" "$VENV_DIR/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
 else
     echo "Warning: requirements.txt not found!"
 fi
 
 # Check for venv (now guaranteed to exist)
 PYTHON_EXEC="python3"
-if [ -d "$PROJECT_DIR/venv" ]; then
-    PYTHON_EXEC="$PROJECT_DIR/venv/bin/python"
-    echo "Using venv at $PROJECT_DIR/venv"
+if [ -d "$VENV_DIR" ]; then
+    PYTHON_EXEC="$VENV_DIR/bin/python"
+    echo "Using venv at $VENV_DIR"
 else
     echo "Warning: No venv found. Using system python3."
 fi

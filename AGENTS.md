@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Use WSL for local development commands.
+Use a Unix-like shell for local development commands. On Windows, use WSL.
 
 ## Project Context
 

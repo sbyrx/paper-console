@@ -70,6 +70,7 @@ class PrinterDriver:
         width: int = 42,  # Characters per line
         port: Optional[str] = None,
         baudrate: int = 9600,  # QR204 only supports 9600
+        init_serial: bool = True,
     ):
         self.width = width
         self.ser = None
@@ -123,6 +124,9 @@ class PrinterDriver:
                 port = possible_ports[0]
 
         self.port = port
+
+        if not init_serial:
+            return
 
         # Initialize serial connection
         try:

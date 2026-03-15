@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 from datetime import datetime, timezone
@@ -35,8 +36,8 @@ INCLUDE_PATHS = [
     "web/dist",
     "requirements.txt",
     "requirements-dev.txt",
+    "requirements-pi.txt",
     "run.sh",
-    "run.bat",
     "AGENTS.md",
     "readme.md",
 ]
@@ -89,13 +90,9 @@ def maybe_run_tests(skip_tests: bool) -> None:
         print("[i] Skipping tests (--skip-tests)")
         return
 
-    py = ROOT / ".venv" / "Scripts" / "python.exe"
-    if py.exists():
-        run_command([str(py), "-m", "pytest", "testing", "-q"], ROOT)
-        return
-
-    # WSL/Linux fallback
-    run_command(["./.venv/bin/python", "-m", "pytest", "testing", "-q"], ROOT)
+    # Reuse the active interpreter so the script works consistently from the
+    # caller's current virtual environment.
+    run_command([sys.executable, "-m", "pytest", "testing", "-q"], ROOT)
 
 
 def maybe_build_web(build_web: bool) -> None:

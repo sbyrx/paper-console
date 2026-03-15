@@ -16,6 +16,7 @@ For each release version (example: `v1.2.3`), publish:
 - Ensure `web/` builds successfully (`npm ci && npm run build`)
 - Ensure backend tests pass
 - Decide semantic version tag (`vX.Y.Z`)
+- On Raspberry Pi devices, install `requirements-pi.txt` during provisioning
 
 ## Build artifacts locally
 
@@ -23,11 +24,7 @@ For each release version (example: `v1.2.3`), publish:
 ./.venv/bin/python scripts/release_build.py --version v1.2.3 --build-web
 ```
 
-Windows:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\release_build.py --version v1.2.3 --build-web
-```
+On Windows, run this command from WSL.
 
 Artifacts are written to `release-artifacts/` by default.
 

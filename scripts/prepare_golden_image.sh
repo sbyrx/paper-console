@@ -144,9 +144,7 @@ else
 fi
 
 PYTHON_BIN="python3"
-if [[ -x "$PROJECT_DIR/venv/bin/python" ]]; then
-    PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
-elif [[ -x "$PROJECT_DIR/.venv/bin/python" ]]; then
+if [[ -x "$PROJECT_DIR/.venv/bin/python" ]]; then
     PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
 fi
 

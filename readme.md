@@ -19,23 +19,20 @@
 ## 1. Quick Start (Software)
 
 Run the entire system on your PC without hardware to test logic and see "printer" output in the terminal.
+Use a Unix-like shell for project commands: Linux, macOS, or WSL on Windows.
+If you're on Windows, run repo commands from WSL rather than PowerShell or Command Prompt.
 
 **Backend:**
 
 ```bash
-# Raspberry Pi / Linux (port 8000)
 ./run.sh
-
-# Windows (port 8001 to avoid conflicts)
-run.bat
 
 # Or run directly
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 * **API Docs:** 
-  * Pi/Linux: [http://localhost:8000/docs](http://localhost:8000/docs)
-  * Windows: [http://localhost:8001/docs](http://localhost:8001/docs)
+  * Local: [http://localhost:8000/docs](http://localhost:8000/docs)
 * **Mock Output:** Watch your Terminal window. The "Printer" writes text there.
 
 **Frontend (Settings UI):**
@@ -46,7 +43,7 @@ npm run dev
 ```
 * **URL:** [http://localhost:5173](http://localhost:5173)
 
-**Tests (WSL/Linux):**
+**Tests:**
 ```bash
 ./testing/run_tests.sh
 ```
@@ -103,16 +100,25 @@ If WiFi setup fails, PC-1 returns to setup mode so the user can try again.
 
 ### Development Environment
 
+Project commands assume a Unix-like shell environment. On Windows, use WSL.
+
+First-time setup:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements-dev.txt
+cd web && npm install
+```
+
 1. **Install Python Dependencies:**
    ```bash
-   pip install -r requirements.txt
+   ./.venv/bin/python -m pip install -r requirements-dev.txt
    ```
-   This installs `pyserial`, `RPi.GPIO`, and other dependencies.
+   This installs the app dependencies plus test tooling. It intentionally excludes Raspberry Pi-only GPIO packages.
 
 2. **Run the Server:**
    ```bash
-   ./run.sh           # Raspberry Pi/Linux
-   run.bat            # Windows
+   ./run.sh
    # Or: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
@@ -120,7 +126,7 @@ If WiFi setup fails, PC-1 returns to setup mode so the user can try again.
 
 1. **Install Python Dependencies:**
    ```bash
-   pip install -r requirements.txt
+   ./.venv/bin/python -m pip install -r requirements-pi.txt
    ```
 
 2. **Run Setup Script:**
@@ -165,6 +171,15 @@ Available modules: **News API**, **RSS Feeds**, **Weather**, **Email Inbox**, **
 ### Settings Storage
 * **Settings File:** `config.json` (auto-saved, gitignored)
 * **Reset:** "Reset All Settings" button restores factory defaults
+
+### Local Validation Workflows
+For non-Pi development, use the local test and snapshot workflows:
+
+* **Pytest:** `./testing/run_tests.sh`
+* **Print snapshots:** `./.venv/bin/python testing/render_all_prints.py --output-dir testing/print_gallery`
+* **Settings UI snapshots:** `./.venv/bin/python testing/render_settings_ui.py --output-dir testing/ui_gallery`
+
+These workflows use mock/local paths and do not require Raspberry Pi GPIO packages.
 
 ### Security & Network Environment Variables
 For production deployments, configure these environment variables:
@@ -228,11 +243,10 @@ paper-console/
 │   ├── setup_pi.sh            # Setup script (Hostname, Nginx, Systemd)
 │   └── wifi_ap_nmcli.sh      # WiFi AP mode manager
 ├── testing/
-│   ├── test_core.py          # Pytest core suite (WSL/Linux)
-│   ├── run_tests.sh          # WSL/Linux test runner
+│   ├── test_core.py          # Pytest core suite
+│   ├── run_tests.sh          # Bash test runner
 │   └── README.md             # Testing notes
 ├── run.sh                 # Development server launcher
-├── run.bat                # Windows development launcher
 ├── requirements.txt       # Python dependencies
 ├── requirements-dev.txt   # Dev/test dependencies
 └── readme.md              # This file

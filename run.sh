@@ -7,14 +7,11 @@ SERVICE_NAME="pc-1"
 SERVICE_WAS_ACTIVE=0
 UVICORN_LOG_LEVEL=${UVICORN_LOG_LEVEL:-warning}
 UVICORN_ACCESS_LOG=${UVICORN_ACCESS_LOG:-0}
+PYTHON_BIN="python3"
 
-# Try to activate venv if it exists
-if [ -f "venv/Scripts/activate" ]; then
-    # shellcheck disable=SC1091
-    source venv/Scripts/activate
-elif [ -f "venv/bin/activate" ]; then
-    # shellcheck disable=SC1091
-    source venv/bin/activate
+# Prefer the repo-standard .venv when available.
+if [ -x ".venv/bin/python" ]; then
+    PYTHON_BIN="./.venv/bin/python"
 fi
 
 # Only stop the service if we're running interactively (not from systemd)
@@ -50,7 +47,7 @@ fi
 pkill -f "uvicorn app.main:app" || true
 
 echo "Starting PC-1 Server on port ${PORT} (log-level=${UVICORN_LOG_LEVEL}, access-log=${UVICORN_ACCESS_LOG})..."
-UVICORN_CMD=(uvicorn app.main:app --host 0.0.0.0 --port "${PORT}" --log-level "${UVICORN_LOG_LEVEL}")
+UVICORN_CMD=("${PYTHON_BIN}" -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT}" --log-level "${UVICORN_LOG_LEVEL}")
 if [ "${UVICORN_ACCESS_LOG}" != "1" ]; then
     UVICORN_CMD+=(--no-access-log)
 fi
