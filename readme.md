@@ -1,8 +1,6 @@
 # PC-1 (Paper Console 1)
 
 **A small, self-hosted thermal printer for news, weather, puzzles, email, and more.**
-*Status: Consumer Launch Candidate*
-*Date: February 2026*
 
 ---
 
