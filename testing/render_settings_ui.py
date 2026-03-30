@@ -23,6 +23,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CAPTURE_SCRIPT = PROJECT_ROOT / "testing" / "render_settings_ui_capture.mjs"
 
 
+def _load_dotenv(dotenv_path: Path) -> None:
+    """Minimal .env loader (KEY=VALUE) without external dependencies."""
+    if not dotenv_path.exists():
+        return
+    for raw in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def _wait_http_ready(url: str, timeout_sec: int = 90) -> None:
     deadline = time.time() + timeout_sec
     last_error = None
@@ -43,12 +58,15 @@ def _spawn(
     cwd: Path,
     stdout,
     stderr,
+    env: dict[str, str] | None = None,
 ) -> subprocess.Popen:
     kwargs: dict = {
         "cwd": str(cwd),
         "stdout": stdout,
         "stderr": stderr,
     }
+    if env is not None:
+        kwargs["env"] = env
     if hasattr(os, "setsid"):
         kwargs["preexec_fn"] = os.setsid
     return subprocess.Popen(cmd, **kwargs)
@@ -103,7 +121,17 @@ def _python_exec() -> str:
     return sys.executable
 
 
+def _child_env() -> dict[str, str]:
+    env = dict(os.environ)
+    device_password = env.get("PC1_DEVICE_PASSWORD", "").strip()
+    setup_password = env.get("PC1_SETUP_PASSWORD", "").strip()
+    if device_password and not setup_password:
+        env["PC1_SETUP_PASSWORD"] = device_password
+    return env
+
+
 def parse_args() -> argparse.Namespace:
+    _load_dotenv(PROJECT_ROOT / ".env")
     parser = argparse.ArgumentParser(
         description="Render settings UI screenshot gallery using Playwright."
     )
@@ -145,6 +173,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional admin token for privileged API calls.",
     )
     parser.add_argument(
+        "--settings-password",
+        default=os.getenv("PC1_DEVICE_PASSWORD", "") or os.getenv("PC1_SETUP_PASSWORD", ""),
+        help="Optional settings password for session-based auth.",
+    )
+    parser.add_argument(
         "--skip-module-seeding",
         action="store_true",
         help="Skip temporary module creation for module editor captures.",
@@ -175,6 +208,7 @@ def main() -> int:
     frontend_proc = None
 
     log_stream = None if args.show_server_logs else subprocess.DEVNULL
+    child_env = _child_env()
 
     try:
         if not args.reuse_servers:
@@ -212,6 +246,7 @@ def main() -> int:
                 PROJECT_ROOT,
                 stdout=log_stream,
                 stderr=log_stream,
+                env=child_env,
             )
             _wait_http_ready(f"{args.backend_url}/api/health", timeout_sec=args.timeout)
 
@@ -221,6 +256,7 @@ def main() -> int:
                 PROJECT_ROOT,
                 stdout=log_stream,
                 stderr=log_stream,
+                env=child_env,
             )
             _wait_http_ready(args.frontend_url, timeout_sec=args.timeout)
         else:
@@ -256,6 +292,8 @@ def main() -> int:
             capture_script_cmd.append("--headful")
         if args.admin_token.strip():
             capture_script_cmd.extend(["--admin-token", args.admin_token.strip()])
+        if args.settings_password.strip():
+            capture_script_cmd.extend(["--settings-password", args.settings_password.strip()])
         if args.skip_module_seeding:
             capture_script_cmd.append("--skip-module-seeding")
 
@@ -274,7 +312,7 @@ def main() -> int:
         ]
 
         print(f"[settings-ui] capturing: {' '.join(capture_cmd)}")
-        proc = subprocess.run(capture_cmd, cwd=str(PROJECT_ROOT))
+        proc = subprocess.run(capture_cmd, cwd=str(PROJECT_ROOT), env=child_env)
         return proc.returncode
     finally:
         _stop_process(frontend_proc)

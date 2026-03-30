@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
 const ADMIN_HEADER = "X-PC1-Admin-Token";
+const SESSION_COOKIE_NAME = "pc1_admin_session";
 const TOKEN_STORAGE_KEY = "pc1_admin_token";
 const DEFAULT_OUTPUT_DIR = "testing/ui_gallery";
 const DEFAULT_BASE_URL = "http://127.0.0.1:5173";
@@ -23,6 +24,7 @@ function parseArgs(argv) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     headful: false,
     adminToken: "",
+    settingsPassword: "",
     skipModuleSeeding: false,
     modulePrefix: DEFAULT_MODULE_PREFIX,
     viewportWidth: DEFAULT_VIEWPORT_WIDTH,
@@ -51,6 +53,9 @@ function parseArgs(argv) {
         break;
       case "--admin-token":
         args.adminToken = next();
+        break;
+      case "--settings-password":
+        args.settingsPassword = next();
         break;
       case "--module-prefix":
         args.modulePrefix = next();
@@ -157,10 +162,13 @@ function extractErrorDetail(status, json, text) {
   return `HTTP ${status}${detail ? ` - ${detail}` : ""}`;
 }
 
-async function apiRequest(method, url, { token = "", data, expected = [200] } = {}) {
+async function apiRequest(method, url, { auth = null, data, expected = [200] } = {}) {
   const headers = { Accept: "application/json" };
-  if (token) {
-    headers[ADMIN_HEADER] = token;
+  if (auth?.token) {
+    headers[ADMIN_HEADER] = auth.token;
+  }
+  if (auth?.cookie) {
+    headers.Cookie = auth.cookie;
   }
   let body;
   if (data !== undefined) {
@@ -183,24 +191,43 @@ async function apiRequest(method, url, { token = "", data, expected = [200] } = 
     throw new Error(`${method} ${url} failed: ${extractErrorDetail(response.status, json, text)}`);
   }
 
-  return { status: response.status, json, text };
+  return {
+    status: response.status,
+    json,
+    text,
+    setCookie: response.headers.get("set-cookie") || "",
+  };
 }
 
-async function ensureAdminCompatibility(baseUrl, adminToken) {
+async function ensureAuthCompatibility(baseUrl, adminToken, settingsPassword) {
   const auth = await apiRequest("GET", `${baseUrl}/api/system/auth/status`, {
     expected: [200],
   });
 
-  if (auth.json?.token_required && !adminToken) {
+  if (auth.json?.login_required && !adminToken && !settingsPassword) {
     throw new Error(
-      "Admin token is required by backend. Re-run with --admin-token <token>."
+      "Settings password is required by backend. Re-run with --settings-password <password> or --admin-token <token>."
     );
   }
+
+  return auth.json || {};
 }
 
-async function removeExistingSeedModules(baseUrl, adminToken, modulePrefix, notes) {
+async function createSessionAuth(baseUrl, settingsPassword) {
+  const login = await apiRequest("POST", `${baseUrl}/api/system/auth/login`, {
+    data: { password: settingsPassword, remember: false },
+    expected: [200],
+  });
+  const cookie = login.setCookie.split(";")[0].trim();
+  if (!cookie.startsWith(`${SESSION_COOKIE_NAME}=`)) {
+    throw new Error("Login succeeded but session cookie was not returned.");
+  }
+  return { token: "", cookie };
+}
+
+async function removeExistingSeedModules(baseUrl, auth, modulePrefix, notes) {
   const modulesRes = await apiRequest("GET", `${baseUrl}/api/modules`, {
-    token: adminToken,
+    auth,
     expected: [200],
   });
   const modules = Object.values(modulesRes.json?.modules || {});
@@ -214,7 +241,7 @@ async function removeExistingSeedModules(baseUrl, adminToken, modulePrefix, note
   for (const module of stale) {
     try {
       await apiRequest("DELETE", `${baseUrl}/api/modules/${module.id}`, {
-        token: adminToken,
+        auth,
         expected: [200, 404],
       });
       notes.push(`Removed stale seeded module: ${module.id}`);
@@ -224,7 +251,7 @@ async function removeExistingSeedModules(baseUrl, adminToken, modulePrefix, note
   }
 }
 
-async function seedModulePerType(baseUrl, adminToken, modulePrefix) {
+async function seedModulePerType(baseUrl, auth, modulePrefix) {
   const typesRes = await apiRequest("GET", `${baseUrl}/api/module-types`, {
     expected: [200],
   });
@@ -245,7 +272,7 @@ async function seedModulePerType(baseUrl, adminToken, modulePrefix) {
     };
 
     const created = await apiRequest("POST", `${baseUrl}/api/modules`, {
-      token: adminToken,
+      auth,
       data: payload,
       expected: [200],
     });
@@ -261,17 +288,46 @@ async function seedModulePerType(baseUrl, adminToken, modulePrefix) {
   return { moduleTypes, createdModules };
 }
 
-async function cleanupCreatedModules(baseUrl, adminToken, createdModules, failures) {
+async function cleanupCreatedModules(baseUrl, auth, createdModules, failures) {
   for (const module of [...createdModules].reverse()) {
     try {
       await apiRequest("DELETE", `${baseUrl}/api/modules/${module.id}`, {
-        token: adminToken,
+        auth,
         expected: [200, 404],
       });
     } catch (error) {
       failures.push(`cleanup:${module.id}: ${error.message}`);
     }
   }
+}
+
+function sessionCookieValue(cookie) {
+  if (!cookie) return "";
+  const [nameValue] = cookie.split(";");
+  const eqIndex = nameValue.indexOf("=");
+  if (eqIndex === -1) return "";
+  return nameValue.slice(eqIndex + 1);
+}
+
+async function ensureBrowserAuthenticated(page, args) {
+  const unlockHeading = page.getByRole("heading", { name: /Unlock Settings/i }).first();
+  const needsLogin = await unlockHeading.isVisible().catch(() => false);
+  if (!needsLogin) return;
+
+  const password = String(args.settingsPassword || args.adminToken || "").trim();
+  if (!password) {
+    throw new Error("Settings login screen is visible but no password was provided.");
+  }
+
+  const passwordInput = page.locator('input[type="password"]').first();
+  await passwordInput.waitFor({ state: "visible", timeout: args.timeoutMs });
+  await passwordInput.fill(password);
+  await page.getByRole("button", { name: /Unlock Settings/i }).first().click();
+  await page.getByRole("tab", { name: "GENERAL" }).first().waitFor({
+    state: "visible",
+    timeout: args.timeoutMs,
+  });
+  await page.waitForTimeout(300);
 }
 
 async function closeModal(page, timeoutMs) {
@@ -504,12 +560,31 @@ async function main() {
 
   let createdModules = [];
   let browser = null;
+  const apiAuth = {
+    token: String(args.adminToken || "").trim(),
+    cookie: "",
+  };
   try {
     console.log("[settings-ui] checking auth compatibility");
-    await ensureAdminCompatibility(args.baseUrl, args.adminToken);
+    const authStatus = await ensureAuthCompatibility(
+      args.baseUrl,
+      apiAuth.token,
+      String(args.settingsPassword || "").trim()
+    );
+    notes.push(`auth_mode=${authStatus.auth_mode || "unknown"}`);
+
+    if (!apiAuth.token && authStatus.login_required && args.settingsPassword) {
+      apiAuth.cookie = (await createSessionAuth(args.baseUrl, args.settingsPassword)).cookie;
+      notes.push("auth_strategy=session_cookie");
+    } else if (apiAuth.token) {
+      notes.push("auth_strategy=admin_token");
+    } else {
+      notes.push("auth_strategy=none");
+    }
 
     console.log("[settings-ui] fetching wifi status");
     const wifi = await apiRequest("GET", `${args.baseUrl}/api/wifi/status`, {
+      auth: apiAuth,
       expected: [200],
     });
     const wifiMode = wifi.json?.mode || "unknown";
@@ -519,13 +594,13 @@ async function main() {
       console.log("[settings-ui] seeding module instances for editor captures");
       await removeExistingSeedModules(
         args.baseUrl,
-        args.adminToken,
+        apiAuth,
         args.modulePrefix,
         notes
       );
       const seeded = await seedModulePerType(
         args.baseUrl,
-        args.adminToken,
+        apiAuth,
         args.modulePrefix
       );
       createdModules = seeded.createdModules;
@@ -550,12 +625,24 @@ async function main() {
         TOKEN_STORAGE_KEY
       );
     }
+    if (apiAuth.cookie) {
+      await context.addCookies([
+        {
+          name: SESSION_COOKIE_NAME,
+          value: sessionCookieValue(apiAuth.cookie),
+          url: args.baseUrl,
+          httpOnly: true,
+          sameSite: "Lax",
+        },
+      ]);
+    }
 
     const page = await context.newPage();
 
     page.on("dialog", async (dialog) => {
-      if (dialog.type() === "prompt" && args.adminToken) {
-        await dialog.accept(args.adminToken);
+      const promptSecret = String(args.adminToken || args.settingsPassword || "").trim();
+      if (dialog.type() === "prompt" && promptSecret) {
+        await dialog.accept(promptSecret);
       } else if (dialog.type() === "confirm") {
         await dialog.accept();
       } else {
@@ -594,6 +681,7 @@ async function main() {
     if (isApUi && !isSettingsUi) {
       await captureApWorkflow(state, page, args, outputDir);
     } else {
+      await ensureBrowserAuthenticated(page, args);
       await captureClientWorkflow(state, page, args, outputDir, createdModules);
     }
 
@@ -606,7 +694,7 @@ async function main() {
     }
     await cleanupCreatedModules(
       args.baseUrl,
-      args.adminToken,
+      apiAuth,
       createdModules,
       state.failures
     );
