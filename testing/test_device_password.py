@@ -28,6 +28,21 @@ def test_device_password_reports_managed_file_source(monkeypatch, tmp_path: Path
 
     assert device_password.is_device_managed() is True
     assert device_password.get_device_password_source() == "managed_file"
+    assert device_password.can_change_device_password() is True
+
+
+def test_raspberry_pi_host_uses_managed_fallback_without_marker(monkeypatch, tmp_path: Path):
+    password_file = tmp_path / "missing" / "device_password"
+    managed_file = tmp_path / "missing" / "device_managed"
+
+    monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
+    monkeypatch.setenv("PC1_DEVICE_PASSWORD_FILE", str(password_file))
+    monkeypatch.setenv("PC1_DEVICE_MANAGED_FILE", str(managed_file))
+    monkeypatch.setattr(device_password, "_looks_like_pc1_host", lambda: True)
+
+    assert device_password.is_device_managed() is True
+    assert device_password.get_device_password_source() == "managed_fallback"
+    assert device_password.can_change_device_password() is False
 
 
 def test_set_device_password_updates_managed_file(monkeypatch, tmp_path: Path):

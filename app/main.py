@@ -2714,19 +2714,45 @@ class DevicePasswordChange(BaseModel):
 @app.get("/api/system/device-password/status")
 async def get_device_password_status():
     managed = device_password.is_device_managed()
+    can_change = device_password.can_change_device_password()
+    source = device_password.get_device_password_source()
+
+    if source == "managed_file":
+        status_label = "Managed on Device"
+        message = (
+            "Changing the Device Password updates settings login, setup WiFi, printed setup instructions, and SSH access."
+        )
+    elif source == "managed_fallback":
+        status_label = "Built-in Device Password"
+        message = (
+            "This PC-1 is using its built-in Device Password. Managed password storage has not been provisioned on this unit yet, "
+            "so password changes and SSH sync are not available from settings."
+        )
+    elif source == "file":
+        status_label = "Stored Locally"
+        message = (
+            "This build is using a locally stored Device Password file outside the managed device provisioning flow."
+        )
+    elif source == "env":
+        status_label = "Development Override"
+        message = (
+            "This build is using a development Device Password override from the environment."
+        )
+    else:
+        status_label = "Fallback Password"
+        message = (
+            "This build is using a fallback Device Password derived from the local machine."
+        )
 
     return {
         "managed": managed,
-        "can_change": managed,
-        "source": device_password.get_device_password_source(),
+        "can_change": can_change,
+        "source": source,
+        "status_label": status_label,
         "password_label": "Device Password",
-        "ssh_sync_enabled": platform.system() == "Linux" and managed,
+        "ssh_sync_enabled": platform.system() == "Linux" and can_change,
         "ssh_username": _get_system_username() if platform.system() == "Linux" else None,
-        "message": (
-            "Changing the Device Password updates settings login, setup WiFi, printed setup instructions, and SSH access."
-            if managed
-            else "This build uses a development override or fallback Device Password. Change it via environment or local development config."
-        ),
+        "message": message,
     }
 
 

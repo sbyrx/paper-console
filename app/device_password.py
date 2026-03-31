@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import platform
 from pathlib import Path
 
 DEVICE_PASSWORD_ENV = "PC1_DEVICE_PASSWORD"
@@ -36,6 +37,45 @@ def _read_password_file(path: Path) -> str:
         return path.read_text(encoding="utf-8", errors="ignore").strip()
     except Exception:
         return ""
+
+
+def _read_text_file(path: Path) -> str:
+    try:
+        if not path.exists() or not path.is_file():
+            return ""
+        return path.read_text(encoding="utf-8", errors="ignore").strip()
+    except Exception:
+        return ""
+
+
+def _looks_like_raspberry_pi() -> bool:
+    for path_str in (
+        "/proc/device-tree/model",
+        "/sys/firmware/devicetree/base/model",
+    ):
+        model = _read_text_file(Path(path_str)).lower()
+        if "raspberry pi" in model:
+            return True
+    return False
+
+
+def _looks_like_pc1_host() -> bool:
+    if platform.system() != "Linux":
+        return False
+    if not _looks_like_raspberry_pi():
+        return False
+    return Path("/etc/systemd/system/pc-1.service").exists()
+
+
+def _device_password_store_writable() -> bool:
+    path = get_device_password_file_path()
+    try:
+        if path.exists():
+            return os.access(path, os.W_OK)
+        parent = path.parent
+        return parent.exists() and os.access(parent, os.W_OK)
+    except Exception:
+        return False
 
 
 def _fallback_device_password() -> str:
@@ -76,9 +116,11 @@ def is_device_managed() -> bool:
     if explicit:
         return explicit in TRUTHY_VALUES
     try:
-        return get_device_managed_marker_path().exists()
+        if get_device_managed_marker_path().exists():
+            return True
     except Exception:
-        return False
+        pass
+    return _looks_like_pc1_host()
 
 
 def get_device_password_source() -> str:
@@ -87,8 +129,12 @@ def get_device_password_source() -> str:
         return "env"
 
     stored_password = _read_password_file(get_device_password_file_path())
+    managed = is_device_managed()
     if len(stored_password) >= MIN_DEVICE_PASSWORD_LENGTH:
-        return "managed_file" if is_device_managed() else "file"
+        return "managed_file" if managed else "file"
+
+    if managed:
+        return "managed_fallback"
 
     return "fallback"
 
@@ -106,7 +152,7 @@ def get_device_password() -> str:
 
 
 def can_change_device_password() -> bool:
-    return is_device_managed()
+    return is_device_managed() and _device_password_store_writable()
 
 
 def set_device_password(new_password: str) -> None:

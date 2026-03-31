@@ -16,6 +16,12 @@ const GeneralSettings = ({
 }) => {
   const inputClass = 'w-full p-3 text-base border-2 border-gray-300 rounded-lg focus:outline-none box-border';
   const labelClass = 'block mb-2 font-bold';
+  const devicePasswordSource = devicePasswordStatus?.source;
+  const devicePasswordBadgeMuted = !['managed_file', 'managed_fallback'].includes(devicePasswordSource || '');
+  const devicePasswordUnavailableMessage =
+    devicePasswordSource === 'managed_fallback'
+      ? 'Password changes will be available after managed device credential storage is provisioned on this unit.'
+      : 'Device Password changes are only available on managed PC-1 builds.';
 
   // Use shared ink gradients
   const inkGradients = INK_GRADIENTS;
@@ -850,9 +856,9 @@ const GeneralSettings = ({
                 <span className='text-sm font-medium text-black  font-bold'>Password Storage</span>
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-medium border-2 ${
-                    devicePasswordStatus?.managed ? 'bg-white text-black border-black' : 'bg-white text-gray-500 border-gray-300'
+                    devicePasswordBadgeMuted ? 'bg-white text-gray-500 border-gray-300' : 'bg-white text-black border-black'
                   }`}>
-                  {devicePasswordStatus?.managed ? 'Managed on Device' : 'Development Override'}
+                  {devicePasswordStatus?.status_label || 'Loading...'}
                 </span>
               </div>
               <p className='text-xs text-gray-600 mt-1 '>
@@ -925,7 +931,7 @@ const GeneralSettings = ({
             ) : (
               <div className='p-4 border-2 border-gray-300 rounded-lg'>
                 <p className='text-sm text-gray-500 '>
-                  Device Password changes are only available on managed PC-1 builds.
+                  {devicePasswordUnavailableMessage}
                 </p>
               </div>
             )}
