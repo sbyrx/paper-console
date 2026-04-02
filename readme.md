@@ -214,24 +214,25 @@ See `scripts/RELEASE.md` for the full release/tag/publish workflow.
 ```
 paper-console/
 ├── app/
-│   ├── main.py                 # FastAPI app, dial/button, print orchestration
-│   ├── config.py               # Settings & module/channel models
-│   ├── module_registry.py      # @register_module metadata & validation
-│   ├── auth.py
-│   ├── factory_reset.py
-│   ├── hardware.py             # Printer + dial singletons
-│   ├── selection_mode.py       # Dial-driven interactive flows
+│   ├── main.py                 # FastAPI app, dial/button loop, print orchestration
+│   ├── auth.py                 # Device-password auth and session helpers
+│   ├── config.py               # Settings, channels, schedules, module models
+│   ├── device_password.py      # Unified device password storage/loading
+│   ├── factory_reset.py        # Factory reset helpers and welcome marker reset
+│   ├── hardware.py             # Printer + dial/button singletons
+│   ├── location_lookup.py      # City/timezone lookup helpers
+│   ├── module_registry.py      # @register_module metadata and validation
+│   ├── selection_mode.py       # Dial-driven interactive selection flows
 │   ├── utils.py
-│   ├── wifi_manager.py
-│   ├── location_lookup.py
-│   ├── data/                   # Bundled corpora (history, quotes, adventure, journal prompts, geonames)
+│   ├── wifi_manager.py         # Setup AP and WiFi connection orchestration
+│   ├── data/                   # Bundled offline content and lookup datasets
 │   ├── drivers/
 │   │   ├── printer_serial.py   # Thermal printer (hardware)
 │   │   ├── printer_mock.py     # Console / capture (dev)
 │   │   ├── dial_gpio.py / dial_mock.py
 │   │   ├── button_gpio.py / button_mock.py
 │   │   └── gpio_ioctl.py
-│   ├── modules/                # One file per printable module type (+ helpers)
+│   ├── modules/                # Printable module implementations
 │   │   ├── adventure.py        # Interactive CYOA (dial)
 │   │   ├── astronomy.py
 │   │   ├── calendar.py
@@ -251,19 +252,37 @@ paper-console/
 │   │   └── webhook.py
 │   └── routers/
 │       └── wifi.py
-├── web/                        # React + Vite + Tailwind (settings UI)
+├── web/                        # React + Vite + Tailwind settings UI
+│   ├── src/                    # App UI, WiFi setup, shared constants/styles
+│   ├── public/                 # Static icons/assets
+│   ├── package.json
+│   └── vite.config.js
 ├── scripts/
 │   ├── setup_pi.sh
 │   ├── wifi_ap_nmcli.sh
 │   ├── release_build.py
-│   ├── RELEASE.md, DEPLOYMENT.md
 │   ├── prepare_golden_image.sh
 │   ├── deploy_automated.py
-│   └── validate_icons.py
-├── testing/                    # Pytest, print/UI render helpers, galleries
-├── images/                     # Product photos (e.g. readme hero)
+│   ├── validate_icons.py
+│   └── RELEASE.md / DEPLOYMENT.md
+├── testing/                    # Pytest, print/UI render helpers, snapshot galleries
+│   ├── render_all_prints.py
+│   ├── render_settings_ui.py
+│   ├── console_raster_preview.py
+│   ├── run_tests.sh
+│   ├── print_gallery/
+│   ├── ui_gallery/
+│   └── tmp/
+├── development/                # BOM, internal docs, supporting scripts
+├── icons/                      # Icon source assets
+├── images/                     # Product photos used in the README
+├── raspberry_pi/               # Misc device imaging/install artifacts
 ├── .github/workflows/
+├── .env.example
+├── .deploy_config.example
 ├── AGENTS.md
+├── config.json                 # Local settings (gitignored in normal use)
+├── deploy.sh
 ├── run.sh
 ├── requirements.txt
 ├── requirements-dev.txt
@@ -332,8 +351,6 @@ This layout organizes connections into logical groups (blocks) for easier assemb
 | **12** | 18 | **DTR (Flow)** | Printer DTR |
 | **14** | GND | **Signal GND** | Printer GND |
 
-*Note: Power the Pi via Pins 2 & 6. Power the Printer directly from the external PSU (split the cable), or via a custom HAT trace. Do not pull high current through the Pi itself.*
-
 #### 2. Main Button Block (Middle)
 *Use a 2-pin connector.*
 
@@ -380,19 +397,12 @@ Legend: `[X]` = Used, `[ ]` = Empty. The header is 2 pins wide.
      (Pin 39) [X] [X] (Pin 40) --> Dial COM| Dial 8
 ```
 
-**Ground Wiring Note:** All device grounds (Printer, Main Button, Rotary Dial Common) connect to a single common ground bus, which then connects to **any one** Pi GPIO ground pin (Pin 14 shown above). All Pi GPIO ground pins are internally connected, so Pin 6, 9, 14, 20, 25, 30, 34, or 39 will work equally well.
-
 ### Thermal Printer
 
 **TTL Serial Connection:**
 1. Wire according to table above
 2. **Serial port is automatically configured** by `scripts/setup_pi.sh` (disables console, enables hardware)
 3. Device appears as `/dev/serial0` after setup
-
-**Note:** The system auto-detects serial ports in this order:
-1. `/dev/serial0` (GPIO Serial - primary)
-2. `/dev/ttyUSB0` (USB-to-Serial adapter)
-3. `/dev/ttyUSB1` (USB-to-Serial adapter)
 
 ### Power Supply
 
@@ -401,7 +411,7 @@ Legend: `[X]` = Used, `[ ]` = Empty. The header is 2 pins wide.
 2.  **Distribution:** Use a custom PCB HAT or a terminal splitter to feed power to two places simultaneously:
     *   **To Pi:** Connect to GPIO Pins 2 (5V) and 6 (GND).
     *   **To Printer:** Connect to the printer's power input cable.
-3.  **Warning:** Do **not** plug the power supply into the Pi's USB port and try to power the printer from the Pi's GPIO pins. The printer draws too much current (up to 4A) and will crash the Pi. Always split the power *before* or *at* the GPIO header using a proper PCB trace.
+3.  **Warning:** Do **not** plug the power supply into the Pi's USB port and try to power the printer from the Pi's GPIO pins. The printer draws too much current (up to 4A) and will crash the Pi.
 
 ---
 
