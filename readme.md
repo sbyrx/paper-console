@@ -9,7 +9,7 @@
 * **Quality materials:** walnut, brass, and archival-grade paper.
 * **Universal channels:** fully configurable channels (Adventure, Astronomy, Calendar, Email, History, Journal Prompt, Maze, News, QR Code, Quotes, RSS, Sudoku, System Monitor, Text / Note, Weather, Webhook)
 
-![PC-1 Front View](images/pc-1_front.jpg)
+![PC-1 Front View](images/pc-1_front2.jpg)
 *Front view showing the brass rotary dial, push button, and thermal paper output*
 
 ---
