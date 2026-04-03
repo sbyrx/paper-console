@@ -832,6 +832,8 @@ async def check_first_boot():
 
 async def check_wifi_startup():
     """Check WiFi status on startup and enter AP mode if needed."""
+    startup_was_first_boot = not os.path.exists(_get_welcome_marker_path())
+
     # Give system time to connect to saved WiFi
     await asyncio.sleep(10)
 
@@ -842,6 +844,11 @@ async def check_wifi_startup():
 
         if success:
             await asyncio.sleep(5)
+            if startup_was_first_boot:
+                logger.info(
+                    "Skipping duplicate startup setup receipt because first-boot receipt already includes setup instructions."
+                )
+                return
             await print_setup_instructions()
         else:
             # Schedule periodic retry in the background

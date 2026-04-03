@@ -68,6 +68,68 @@ def test_start_ap_mode_returns_false_after_all_retries(monkeypatch):
     assert wifi_manager.start_ap_mode(retries=2, retry_delay=0) is False
 
 
+def test_check_wifi_startup_skips_duplicate_setup_receipt_on_first_boot(monkeypatch):
+    sleep_calls = []
+    print_calls = []
+    ap_calls = []
+
+    async def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    async def fake_print_setup():
+        print_calls.append("setup")
+
+    monkeypatch.setattr(main_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(main_module.os.path, "exists", lambda _path: False)
+    monkeypatch.setattr(
+        main_module.wifi_manager,
+        "get_wifi_status",
+        lambda: {"connected": False, "mode": "client"},
+    )
+    monkeypatch.setattr(
+        main_module.wifi_manager,
+        "start_ap_mode",
+        lambda retries=3: ap_calls.append(retries) or True,
+    )
+    monkeypatch.setattr(main_module, "print_setup_instructions", fake_print_setup)
+
+    asyncio.run(main_module.check_wifi_startup())
+
+    assert ap_calls == [3]
+    assert print_calls == []
+    assert sleep_calls == [10, 5]
+
+
+def test_check_wifi_startup_prints_setup_receipt_on_regular_boot(monkeypatch):
+    print_calls = []
+    ap_calls = []
+
+    async def fake_sleep(_seconds):
+        return None
+
+    async def fake_print_setup():
+        print_calls.append("setup")
+
+    monkeypatch.setattr(main_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(main_module.os.path, "exists", lambda _path: True)
+    monkeypatch.setattr(
+        main_module.wifi_manager,
+        "get_wifi_status",
+        lambda: {"connected": False, "mode": "client"},
+    )
+    monkeypatch.setattr(
+        main_module.wifi_manager,
+        "start_ap_mode",
+        lambda retries=3: ap_calls.append(retries) or True,
+    )
+    monkeypatch.setattr(main_module, "print_setup_instructions", fake_print_setup)
+
+    asyncio.run(main_module.check_wifi_startup())
+
+    assert ap_calls == [3]
+    assert print_calls == ["setup"]
+
+
 def test_printer_driver_handles_serial_init_failure(monkeypatch):
     import serial
 
