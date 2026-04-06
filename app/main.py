@@ -180,6 +180,13 @@ async def email_polling_loop():
             # Check each email module silently
             for module in email_modules:
                 try:
+                    if not _try_begin_print_job(debounce=False):
+                        logger.info(
+                            "Skipping auto-print email poll for module_id=%s because printer is busy or reserved.",
+                            getattr(module, "id", "unknown"),
+                        )
+                        continue
+
                     # Run email fetching and printing in thread pool to avoid blocking event loop
                     from concurrent.futures import ThreadPoolExecutor
 
@@ -212,6 +219,8 @@ async def email_polling_loop():
                         "Email polling iteration failed for module_id=%s",
                         getattr(module, "id", "unknown"),
                     )
+                finally:
+                    _clear_print_reservation(clear_hold=False)
 
         except Exception:
             logger.exception("Email polling loop encountered an unexpected error")
@@ -240,6 +249,12 @@ async def scheduler_loop():
             # Check all channels for matching schedule
             for pos, channel in settings.channels.items():
                 if channel.schedule and current_time in channel.schedule:
+                    if not _try_begin_print_job(debounce=False):
+                        logger.info(
+                            "Skipping scheduled print for channel %s because printer is busy or reserved.",
+                            pos,
+                        )
+                        continue
                     await trigger_channel(pos)
 
         except Exception:
@@ -253,6 +268,7 @@ import threading
 
 print_lock = threading.Lock()
 print_in_progress = False
+hold_action_in_progress = False
 last_print_time = 0.0
 PRINT_DEBOUNCE_SECONDS = 3.0  # Minimum time between print jobs
 
@@ -260,24 +276,74 @@ PRINT_DEBOUNCE_SECONDS = 3.0  # Minimum time between print jobs
 global_loop = None
 
 
-def on_button_press_threadsafe():
-    """Callback that schedules the trigger on the main event loop."""
-    global global_loop, print_in_progress, last_print_time
+def _printer_reserved_locked() -> bool:
+    """Return True when the printer is reserved for a print or hold action."""
+    return print_in_progress or hold_action_in_progress
+
+
+def _try_begin_print_job(*, debounce: bool = False) -> bool:
+    """Reserve the printer for a new print job."""
+    global print_in_progress, last_print_time
     import time
 
     with print_lock:
-        # Check if print is already in progress
-        if print_in_progress:
-            return
+        if _printer_reserved_locked():
+            return False
 
-        # Debounce: ignore presses that come too quickly after the last one
         current_time = time.time()
-        if (current_time - last_print_time) < PRINT_DEBOUNCE_SECONDS:
-            return
+        if debounce and (current_time - last_print_time) < PRINT_DEBOUNCE_SECONDS:
+            return False
 
-        # Set flag immediately to prevent multiple clicks
         print_in_progress = True
         last_print_time = current_time
+        return True
+
+
+def _reserve_hold_action() -> bool:
+    """Reserve the printer once the user crosses a long-hold threshold."""
+    global hold_action_in_progress, last_print_time
+    import time
+
+    with print_lock:
+        if print_in_progress:
+            return False
+
+        hold_action_in_progress = True
+        last_print_time = time.time()
+        return True
+
+
+def _promote_hold_to_print_job() -> bool:
+    """Convert a hold reservation into an active print job."""
+    global print_in_progress, hold_action_in_progress, last_print_time
+    import time
+
+    with print_lock:
+        if print_in_progress:
+            return False
+
+        hold_action_in_progress = False
+        print_in_progress = True
+        last_print_time = time.time()
+        return True
+
+
+def _clear_print_reservation(*, clear_hold: bool = True):
+    """Release active print/hold reservations."""
+    global print_in_progress, hold_action_in_progress
+
+    with print_lock:
+        print_in_progress = False
+        if clear_hold:
+            hold_action_in_progress = False
+
+
+def on_button_press_threadsafe():
+    """Callback that schedules the trigger on the main event loop."""
+    global global_loop
+
+    if not _try_begin_print_job(debounce=True):
+        return
 
     try:
         if global_loop and global_loop.is_running():
@@ -295,12 +361,10 @@ def on_button_press_threadsafe():
                 asyncio.run_coroutine_threadsafe(trigger_current_channel(), global_loop)
         else:
             # Loop not running, reset flag
-            with print_lock:
-                print_in_progress = False
+            _clear_print_reservation(clear_hold=False)
     except Exception:
         # Failed to schedule, reset flag
-        with print_lock:
-            print_in_progress = False
+        _clear_print_reservation(clear_hold=False)
 
 
 async def handle_selection_async(dial_position: int):
@@ -308,7 +372,6 @@ async def handle_selection_async(dial_position: int):
     Async wrapper to handle selection mode input.
     Runs blocking operations in a thread pool.
     """
-    global print_in_progress
     from concurrent.futures import ThreadPoolExecutor
     from app.selection_mode import handle_selection
 
@@ -324,36 +387,29 @@ async def handle_selection_async(dial_position: int):
             await loop.run_in_executor(executor, _do_selection)
     finally:
         # Always mark print as complete
-        with print_lock:
-            print_in_progress = False
+        _clear_print_reservation(clear_hold=False)
 
 
 def on_button_long_press_threadsafe():
     """Callback for long press (5 seconds) - opens quick actions menu."""
-    global global_loop, print_in_progress, last_print_time
-    import time
+    global global_loop
 
-    with print_lock:
-        # Don't interrupt active print jobs.
-        if print_in_progress:
-            return
-        print_in_progress = True
-        last_print_time = time.time()
+    if not _promote_hold_to_print_job() and not _try_begin_print_job(debounce=False):
+        return
 
     try:
         if global_loop and global_loop.is_running():
             asyncio.run_coroutine_threadsafe(long_press_menu_trigger(), global_loop)
         else:
-            with print_lock:
-                print_in_progress = False
+            _clear_print_reservation()
     except Exception:
-        with print_lock:
-            print_in_progress = False
+        _clear_print_reservation()
 
 
 def on_button_long_press_ready_threadsafe():
     """Callback fired at 5s hold threshold to signal 'you can release now'."""
     try:
+        _reserve_hold_action()
         # Half-line tactile feed cue.
         if hasattr(printer, "feed_dots"):
             printer.feed_dots(12)
@@ -504,8 +560,6 @@ async def long_press_menu_trigger():
     from concurrent.futures import ThreadPoolExecutor
     from app.selection_mode import enter_selection_mode, exit_selection_mode
 
-    global print_in_progress
-
     # Cancel any existing interactive mode before opening quick actions
     exit_selection_mode()
 
@@ -527,8 +581,7 @@ async def long_press_menu_trigger():
         return
     finally:
         # Release lock so normal button presses can drive selection mode.
-        with print_lock:
-            print_in_progress = False
+        _clear_print_reservation(clear_hold=False)
 
     def _handle_quick_action(dial_position: int):
         from app.selection_mode import exit_selection_mode
@@ -934,40 +987,49 @@ async def factory_reset_trigger():
         if hasattr(printer, "flush_buffer"):
             printer.flush_buffer()
 
-    # Run blocking printer operations in thread pool to avoid blocking event loop
     try:
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
-            await loop.run_in_executor(executor, _print_reset_message)
-    except Exception:
-        logger.warning(
-            "Factory reset pre-reboot receipt failed to print",
-            exc_info=True,
-        )  # Continue reset flow even if print fails
-
-    # Wait for print to complete
-    await asyncio.sleep(3)
-
-    reset_result = perform_factory_reset()
-    if not reset_result.get("reboot_requested", False):
-        logger.error(
-            "Factory reset finished but reboot could not be requested: %s",
-            "; ".join(reset_result.get("errors", [])),
-        )
-        # Fallback: try to make the device recoverable without reboot.
+        # Run blocking printer operations in thread pool to avoid blocking event loop
         try:
-            if wifi_manager.start_ap_mode(retries=2):
-                await asyncio.sleep(1)
-                await print_setup_instructions()
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                await loop.run_in_executor(executor, _print_reset_message)
         except Exception:
-            logger.exception("Factory reset fallback AP-mode recovery failed")
+            logger.warning(
+                "Factory reset pre-reboot receipt failed to print",
+                exc_info=True,
+            )  # Continue reset flow even if print fails
+
+        # Wait for print to complete
+        await asyncio.sleep(3)
+
+        reset_result = perform_factory_reset()
+        if not reset_result.get("reboot_requested", False):
+            logger.error(
+                "Factory reset finished but reboot could not be requested: %s",
+                "; ".join(reset_result.get("errors", [])),
+            )
+            # Fallback: try to make the device recoverable without reboot.
+            try:
+                if wifi_manager.start_ap_mode(retries=2):
+                    await asyncio.sleep(1)
+                    await print_setup_instructions()
+            except Exception:
+                logger.exception("Factory reset fallback AP-mode recovery failed")
+    finally:
+        _clear_print_reservation()
 
 
 def on_factory_reset_threadsafe():
     """Callback for factory reset press (15+ seconds)."""
     global global_loop
+    if not _promote_hold_to_print_job() and not _try_begin_print_job(debounce=False):
+        logger.info("Ignoring factory reset hold because printer is already busy.")
+        return
+
     if global_loop and global_loop.is_running():
         asyncio.run_coroutine_threadsafe(factory_reset_trigger(), global_loop)
+    else:
+        _clear_print_reservation()
 
 
 @asynccontextmanager
@@ -987,9 +1049,6 @@ async def lifespan(app: FastAPI):
     def _init_printer():
         if hasattr(printer, "clear_hardware_buffer"):
             printer.clear_hardware_buffer()
-        if hasattr(printer, "set_cutter_feed"):
-            cutter_lines = getattr(settings, "cutter_feed_lines", 7)
-            printer.set_cutter_feed(cutter_lines)
 
     try:
         loop = asyncio.get_event_loop()
@@ -1257,11 +1316,6 @@ async def update_settings(new_settings: Settings, background_tasks: BackgroundTa
     # Update module-level reference so modules that access app.config.settings will see the update
     config_module.settings = settings
 
-    # Update printer cutter feed if setting changed
-    if hasattr(printer, "set_cutter_feed"):
-        cutter_lines = getattr(settings, "cutter_feed_lines", 7)
-        printer.set_cutter_feed(cutter_lines)
-
     # Save to disk
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
 
@@ -1278,11 +1332,6 @@ async def reset_settings(background_tasks: BackgroundTasks):
 
     # Create fresh settings instance (uses defaults from config.py)
     settings = Settings()
-
-    # Update printer cutter feed to default
-    if hasattr(printer, "set_cutter_feed"):
-        cutter_lines = getattr(settings, "cutter_feed_lines", 7)
-        printer.set_cutter_feed(cutter_lines)
 
     # Save to disk (overwriting existing config.json)
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
@@ -3554,7 +3603,6 @@ async def trigger_channel(position: int):
     Executes all modules assigned to a specific channel position.
     Runs blocking printer operations in a thread pool to avoid blocking the event loop.
     """
-    global print_in_progress
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     from app.selection_mode import exit_selection_mode
@@ -3743,8 +3791,8 @@ async def trigger_channel(position: int):
         if hasattr(printer, "flush_buffer"):
             printer.flush_buffer()
 
-        # Flush buffer to actually print (in reverse order for tear-off orientation)
-        # Spacing is built into the bitmap (5 lines at end of each print job)
+        # Flush buffer to actually print. The printer driver applies a fixed
+        # post-print cutter feed after each job.
         if hasattr(printer, "flush_buffer"):
             printer.flush_buffer()
 
@@ -3755,8 +3803,7 @@ async def trigger_channel(position: int):
             await loop.run_in_executor(executor, _do_print)
     finally:
         # Always mark print as complete (thread-safe)
-        with print_lock:
-            print_in_progress = False
+        _clear_print_reservation(clear_hold=False)
 
 
 async def trigger_current_channel():
@@ -3771,18 +3818,13 @@ async def trigger_current_channel():
 @app.post("/action/trigger", dependencies=[Depends(require_admin_access)])
 async def manual_trigger():
     """Simulates pressing the big brass button."""
-    global print_in_progress
-
-    with print_lock:
-        if print_in_progress:
-            raise HTTPException(status_code=409, detail="Print already in progress")
-        print_in_progress = True
+    if not _try_begin_print_job(debounce=False):
+        raise HTTPException(status_code=409, detail="Print already in progress")
 
     try:
         await trigger_current_channel()
     finally:
-        with print_lock:
-            print_in_progress = False
+        _clear_print_reservation(clear_hold=False)
     return {"message": "Triggered"}
 
 
@@ -3802,16 +3844,13 @@ async def set_dial(position: int):
 )
 async def print_channel(position: int, background_tasks: BackgroundTasks):
     """Set dial position and trigger print atomically. Returns immediately while print runs in background."""
-    global print_in_progress
     logger = logging.getLogger(__name__)
 
     if position < 1 or position > 8:
         raise HTTPException(status_code=400, detail="Position must be 1-8")
 
-    with print_lock:
-        if print_in_progress:
-            raise HTTPException(status_code=409, detail="Print already in progress")
-        print_in_progress = True
+    if not _try_begin_print_job(debounce=False):
+        raise HTTPException(status_code=409, detail="Print already in progress")
 
     # Run print in background and return immediately
     # trigger_channel handles errors and clears print_in_progress in its finally block
@@ -3828,16 +3867,12 @@ async def print_channel(position: int, background_tasks: BackgroundTasks):
 )
 async def print_module(module_id: str, background_tasks: BackgroundTasks):
     """Forces a specific module instance to print (for testing)."""
-    global print_in_progress
-
     module = settings.modules.get(module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    with print_lock:
-        if print_in_progress:
-            raise HTTPException(status_code=409, detail="Print already in progress")
-        print_in_progress = True
+    if not _try_begin_print_job(debounce=False):
+        raise HTTPException(status_code=409, detail="Print already in progress")
 
     # Run print in background and return immediately
     # print_module_direct handles errors and clears print_in_progress in its finally block
@@ -3849,7 +3884,6 @@ async def print_module_direct(module_id: str):
     """Internal function to print a single module with proper buffer setup.
     Runs blocking printer operations in a thread pool to avoid blocking the event loop.
     """
-    global print_in_progress
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     from app.selection_mode import exit_selection_mode
@@ -3889,8 +3923,8 @@ async def print_module_direct(module_id: str):
         # Execute the module
         execute_module(module)
 
-        # Flush buffer to actually print (in reverse order for tear-off orientation)
-        # Spacing is built into the bitmap (5 lines at end of each print job)
+        # Flush buffer to actually print. The printer driver applies a fixed
+        # post-print cutter feed after each job.
         if hasattr(printer, "flush_buffer"):
             printer.flush_buffer()
 
@@ -3901,8 +3935,7 @@ async def print_module_direct(module_id: str):
             await loop.run_in_executor(executor, _do_print)
     finally:
         # Always mark print as complete (thread-safe)
-        with print_lock:
-            print_in_progress = False
+        _clear_print_reservation(clear_hold=False)
 
 
 @app.post("/debug/test-webhook", dependencies=[Depends(require_admin_access)])
