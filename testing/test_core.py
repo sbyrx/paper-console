@@ -48,7 +48,8 @@ def test_ap_password_fallback_uses_device_hash(monkeypatch, tmp_path):
     monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
     monkeypatch.setenv("PC1_DEVICE_PASSWORD_FILE", str(tmp_path / "device_password"))
     monkeypatch.setattr(device_password, "get_device_password_seed", lambda: "seed-value")
-    expected = hashlib.sha256(b"seed-value").hexdigest()[:8]
+    raw_expected = hashlib.sha256(b"seed-value").hexdigest()[:8]
+    expected = f"{raw_expected[:4]}-{raw_expected[4:]}"
     assert wifi_manager.get_ap_password() == expected
 
 

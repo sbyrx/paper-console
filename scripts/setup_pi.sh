@@ -249,8 +249,9 @@ if [ "${#DEVICE_PASSWORD}" -lt 8 ]; then
     DEVICE_PASSWORD=$("$PYTHON_EXEC" - <<'PY'
 import secrets
 
-alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-print("".join(secrets.choice(alphabet) for _ in range(8)))
+alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+raw = "".join(secrets.choice(alphabet) for _ in range(8))
+print(f"{raw[:4]}-{raw[4:]}")
 PY
 )
     printf '%s\n' "$DEVICE_PASSWORD" > "$DEVICE_PASSWORD_FILE"

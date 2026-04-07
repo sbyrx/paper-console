@@ -1872,24 +1872,27 @@ async def get_current_version():
     Get the current version identifier without checking for updates.
     """
     try:
-        import subprocess
-        from pathlib import Path
+        project_root = _get_project_root()
+        install_mode = _get_install_mode(project_root)
 
-        # Get the project root directory (parent of app/)
-        project_root = Path(__file__).parent.parent
+        if install_mode == "production":
+            version_file = project_root / ".version"
+            if version_file.exists():
+                version_text = version_file.read_text(encoding="utf-8").strip()
+                if version_text:
+                    return {
+                        "version": version_text,
+                        "install_mode": install_mode,
+                        "can_convert_to_production": False,
+                    }
+            return {
+                "version": "unknown",
+                "install_mode": install_mode,
+                "can_convert_to_production": False,
+            }
 
-        # Prefer explicit release version for production installs
-        version_file = project_root / ".version"
-        if version_file.exists():
-            version_text = version_file.read_text(encoding="utf-8").strip()
-            if version_text:
-                return {"version": version_text}
-
-        # Fall back to git commit hash in development clones
-        if not (project_root / ".git").exists():
-            return {"version": "unknown"}
-
-        # Get current commit hash (short)
+        # Development clones report the current git commit.
+        # If a stale .version exists alongside .git, the install still behaves as dev.
         current_commit_result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=project_root,
@@ -1906,13 +1909,272 @@ async def get_current_version():
 
         return {
             "version": current_commit,
+            "install_mode": install_mode,
+            "can_convert_to_production": True,
         }
 
     except Exception as e:
         return {
             "version": "unknown",
+            "install_mode": "unknown",
+            "can_convert_to_production": False,
             "error": str(e),
         }
+
+
+def _get_project_root() -> Path:
+    """Return the project root directory (parent of app/)."""
+    return Path(__file__).parent.parent
+
+
+def _get_install_mode(project_root: Optional[Path] = None) -> str:
+    root = project_root or _get_project_root()
+    return "development" if (root / ".git").exists() else "production"
+
+
+def _get_release_bundle_metadata(
+    release_repo: str,
+    *,
+    release_tag: str = "",
+) -> Dict[str, str]:
+    import requests
+
+    release_path = f"releases/tags/{release_tag}" if release_tag else "releases/latest"
+    release_resp = requests.get(
+        f"https://api.github.com/repos/{release_repo}/{release_path}",
+        headers={"User-Agent": "PC-1-OTA-Updater"},
+        timeout=10,
+    )
+    release_resp.raise_for_status()
+    release_data = release_resp.json()
+
+    tag_name = (release_data.get("tag_name") or "").strip()
+    if not tag_name:
+        raise RuntimeError("Release metadata did not include tag_name")
+
+    assets = release_data.get("assets") or []
+    preferred_asset_name = f"pc1-{tag_name}.tar.gz"
+    checksum_asset_name = f"pc1-{tag_name}.sha256"
+
+    tar_asset = next(
+        (asset for asset in assets if asset.get("name") == preferred_asset_name),
+        None,
+    )
+    if not tar_asset:
+        raise RuntimeError(
+            "Latest release is missing the required production bundle asset "
+            f"'{preferred_asset_name}'."
+        )
+
+    checksum_asset = next(
+        (asset for asset in assets if asset.get("name") == checksum_asset_name),
+        None,
+    )
+    aggregate_checksum_asset = next(
+        (
+            asset
+            for asset in assets
+            if str(asset.get("name", "")).lower() in {"sha256sums", "sha256sums.txt"}
+        ),
+        None,
+    )
+
+    tarball_url = (tar_asset.get("browser_download_url") or "").strip()
+    tarball_name = str(tar_asset.get("name") or "").strip()
+    if not tarball_url:
+        raise RuntimeError("Release bundle metadata did not include a download URL")
+
+    checksum_url = (
+        (checksum_asset.get("browser_download_url") or "").strip()
+        if checksum_asset
+        else ""
+    )
+    aggregate_checksum_url = (
+        (aggregate_checksum_asset.get("browser_download_url") or "").strip()
+        if aggregate_checksum_asset
+        else ""
+    )
+
+    return {
+        "tag_name": tag_name,
+        "tarball_name": tarball_name,
+        "tarball_url": tarball_url,
+        "checksum_url": checksum_url,
+        "aggregate_checksum_url": aggregate_checksum_url,
+    }
+
+
+def _extract_expected_sha_from_checksum_text(
+    checksum_text: str, tarball_name: str
+) -> str:
+    for raw_line in checksum_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) == 1 and len(parts[0]) >= 64:
+            return parts[0].strip().lower()
+        if len(parts) >= 2 and parts[-1].lstrip("*") == tarball_name:
+            return parts[0].strip().lower()
+    return ""
+
+
+def _install_release_bundle(
+    project_root: Path,
+    release_repo: str,
+    *,
+    expected_sha: str = "",
+    release_tag: str = "",
+) -> str:
+    import hashlib
+    import requests
+    import tarfile
+    import tempfile
+
+    release_meta = _get_release_bundle_metadata(release_repo, release_tag=release_tag)
+    tag_name = release_meta["tag_name"]
+    tarball_name = release_meta["tarball_name"]
+    tarball_url = release_meta["tarball_url"]
+
+    with tempfile.TemporaryDirectory(prefix="pc1-update-") as tmp_dir:
+        tar_path = Path(tmp_dir) / tarball_name
+        sha256 = hashlib.sha256()
+
+        with requests.get(
+            tarball_url,
+            headers={"User-Agent": "PC-1-OTA-Updater"},
+            timeout=20,
+            stream=True,
+        ) as download_resp:
+            download_resp.raise_for_status()
+            with open(tar_path, "wb") as tar_file:
+                for chunk in download_resp.iter_content(chunk_size=65536):
+                    if not chunk:
+                        continue
+                    tar_file.write(chunk)
+                    sha256.update(chunk)
+
+        resolved_expected_sha = (expected_sha or "").strip().lower()
+        if not resolved_expected_sha:
+            checksum_candidates = [
+                release_meta["checksum_url"],
+                release_meta["aggregate_checksum_url"],
+            ]
+            for checksum_url in checksum_candidates:
+                if not checksum_url:
+                    continue
+                checksum_resp = requests.get(
+                    checksum_url,
+                    headers={"User-Agent": "PC-1-OTA-Updater"},
+                    timeout=10,
+                )
+                if not checksum_resp.ok:
+                    continue
+                resolved_expected_sha = _extract_expected_sha_from_checksum_text(
+                    checksum_resp.text,
+                    tarball_name,
+                )
+                if resolved_expected_sha:
+                    break
+
+        actual_sha = sha256.hexdigest().lower()
+        if resolved_expected_sha and actual_sha != resolved_expected_sha:
+            raise RuntimeError("SHA256 mismatch for downloaded update package")
+
+        extract_dir = Path(tmp_dir) / "extract"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        with tarfile.open(tar_path, "r:gz") as tar:
+            def _is_within_directory(directory: Path, target: Path) -> bool:
+                abs_directory = directory.resolve()
+                abs_target = target.resolve()
+                return str(abs_target).startswith(str(abs_directory))
+
+            for member in tar.getmembers():
+                member_path = extract_dir / member.name
+                if not _is_within_directory(extract_dir, member_path):
+                    raise ValueError("Update package contains invalid file paths")
+            tar.extractall(extract_dir)
+
+        extracted_items = [p for p in extract_dir.iterdir()]
+        source_dir = (
+            extracted_items[0]
+            if len(extracted_items) == 1 and extracted_items[0].is_dir()
+            else extract_dir
+        )
+        _validate_production_update_bundle(source_dir)
+
+        version_file = project_root / ".version"
+        config_backup = Path(tmp_dir) / "config.json.backup"
+        env_backup = Path(tmp_dir) / ".env.backup"
+        config_path = project_root / "config.json"
+        env_path = project_root / ".env"
+
+        if config_path.exists():
+            shutil.copy2(config_path, config_backup)
+        if env_path.exists():
+            shutil.copy2(env_path, env_backup)
+
+        excluded = {".git", ".github", "__pycache__", ".venv"}
+        for item in source_dir.iterdir():
+            if item.name in excluded:
+                continue
+            dest = project_root / item.name
+            if dest.exists():
+                if dest.is_dir() and not dest.is_symlink():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            if item.is_dir():
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy2(item, dest)
+
+        if config_backup.exists():
+            shutil.copy2(config_backup, config_path)
+        if env_backup.exists():
+            shutil.copy2(env_backup, env_path)
+
+        version_file.write_text(tag_name, encoding="utf-8")
+
+    return tag_name
+
+
+def _restart_pc1_service() -> None:
+    if platform.system() != "Linux":
+        return
+
+    subprocess.run(
+        ["sudo", "systemctl", "reset-failed", "pc-1.service"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    restart_result = subprocess.run(
+        ["sudo", "systemctl", "restart", "pc-1.service"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    # systemctl restart returns 0 on success, but even if it returns non-zero,
+    # the service might still restart. Check the actual service status instead.
+    if restart_result.returncode != 0:
+        time.sleep(3)
+        status_result = subprocess.run(
+            ["systemctl", "is-active", "pc-1.service"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if (
+            status_result.returncode == 0
+            and status_result.stdout.strip() == "active"
+        ):
+            pass
+
+    time.sleep(1)
 
 
 @app.get("/api/system/updates/check")
@@ -2200,13 +2462,7 @@ async def install_updates():
     Install available updates and restart the service.
     """
     try:
-        import hashlib
-        import requests
-        import tarfile
-        import tempfile
-
-        # Get the project root directory
-        project_root = Path(__file__).parent.parent
+        project_root = _get_project_root()
 
         # Check if we're running from a git clone (dev mode)
         is_dev = (project_root / ".git").exists()
@@ -2254,151 +2510,11 @@ async def install_updates():
             expected_sha = os.environ.get("PC1_UPDATE_TARBALL_SHA256", "").strip().lower()
 
             try:
-                release_resp = requests.get(
-                    f"https://api.github.com/repos/{release_repo}/releases/latest",
-                    headers={"User-Agent": "PC-1-OTA-Updater"},
-                    timeout=10,
+                _install_release_bundle(
+                    project_root,
+                    release_repo,
+                    expected_sha=expected_sha,
                 )
-                release_resp.raise_for_status()
-                release_data = release_resp.json()
-
-                tag_name = (release_data.get("tag_name") or "unknown").strip()
-                assets = release_data.get("assets") or []
-
-                # Prefer an explicit release artifact produced by scripts/release_build.py.
-                preferred_asset_name = f"pc1-{tag_name}.tar.gz"
-                tar_asset = next(
-                    (
-                        asset
-                        for asset in assets
-                        if asset.get("name") == preferred_asset_name
-                    ),
-                    None,
-                )
-
-                tarball_url = ""
-                tarball_name = ""
-                if tar_asset:
-                    tarball_url = (tar_asset.get("browser_download_url") or "").strip()
-                    tarball_name = str(tar_asset.get("name") or "").strip()
-                else:
-                    return {
-                        "success": False,
-                        "message": "Update failed",
-                        "error": (
-                            "Latest release is missing the required production bundle "
-                            f"asset '{preferred_asset_name}'."
-                        ),
-                    }
-
-                if not tarball_url:
-                    raise ValueError("No update package URL found in latest release")
-
-                with tempfile.TemporaryDirectory(prefix="pc1-update-") as tmp_dir:
-                    tar_path = Path(tmp_dir) / "update.tar.gz"
-                    sha256 = hashlib.sha256()
-
-                    with requests.get(
-                        tarball_url,
-                        headers={"User-Agent": "PC-1-OTA-Updater"},
-                        timeout=20,
-                        stream=True,
-                    ) as download_resp:
-                        download_resp.raise_for_status()
-                        with open(tar_path, "wb") as tar_file:
-                            for chunk in download_resp.iter_content(chunk_size=65536):
-                                if not chunk:
-                                    continue
-                                tar_file.write(chunk)
-                                sha256.update(chunk)
-
-                    if not expected_sha:
-                        # Optional auto-check: parse checksum from release asset.
-                        checksum_asset = next(
-                            (
-                                asset
-                                for asset in assets
-                                if str(asset.get("name", "")).lower()
-                                in {"sha256sums", "sha256sums.txt"}
-                            ),
-                            None,
-                        )
-                        if checksum_asset and checksum_asset.get("browser_download_url"):
-                            sums_resp = requests.get(
-                                checksum_asset["browser_download_url"],
-                                headers={"User-Agent": "PC-1-OTA-Updater"},
-                                timeout=10,
-                            )
-                            if sums_resp.ok:
-                                for raw_line in sums_resp.text.splitlines():
-                                    line = raw_line.strip()
-                                    if not line:
-                                        continue
-                                    parts = line.split()
-                                    if len(parts) >= 2 and parts[-1].lstrip("*") == tarball_name:
-                                        expected_sha = parts[0].strip().lower()
-                                        break
-
-                    actual_sha = sha256.hexdigest().lower()
-                    if expected_sha and actual_sha != expected_sha:
-                        return {
-                            "success": False,
-                            "message": "Update package verification failed",
-                            "error": "SHA256 mismatch for downloaded update package",
-                        }
-
-                    extract_dir = Path(tmp_dir) / "extract"
-                    extract_dir.mkdir(parents=True, exist_ok=True)
-
-                    with tarfile.open(tar_path, "r:gz") as tar:
-                        def _is_within_directory(directory: Path, target: Path) -> bool:
-                            abs_directory = directory.resolve()
-                            abs_target = target.resolve()
-                            return str(abs_target).startswith(str(abs_directory))
-
-                        for member in tar.getmembers():
-                            member_path = extract_dir / member.name
-                            if not _is_within_directory(extract_dir, member_path):
-                                raise ValueError(
-                                    "Update package contains invalid file paths"
-                                )
-                        tar.extractall(extract_dir)
-
-                    extracted_items = [p for p in extract_dir.iterdir()]
-                    source_dir = (
-                        extracted_items[0]
-                        if len(extracted_items) == 1 and extracted_items[0].is_dir()
-                        else extract_dir
-                    )
-                    _validate_production_update_bundle(source_dir)
-
-                    config_backup = project_root / "config.json.bak"
-                    env_backup = project_root / ".env.bak"
-                    config_path = project_root / "config.json"
-                    env_path = project_root / ".env"
-
-                    if config_path.exists():
-                        shutil.copy2(config_path, config_backup)
-                    if env_path.exists():
-                        shutil.copy2(env_path, env_backup)
-
-                    excluded = {".git", ".github", "__pycache__", ".venv"}
-                    for item in source_dir.iterdir():
-                        if item.name in excluded:
-                            continue
-                        dest = project_root / item.name
-                        if item.is_dir():
-                            shutil.copytree(item, dest, dirs_exist_ok=True)
-                        else:
-                            shutil.copy2(item, dest)
-
-                    if config_backup.exists():
-                        shutil.copy2(config_backup, config_path)
-                    if env_backup.exists():
-                        shutil.copy2(env_backup, env_path)
-
-                    (project_root / ".version").write_text(tag_name, encoding="utf-8")
-
             except Exception as e:
                 logger.exception("Production OTA install failed")
                 return {
@@ -2460,48 +2576,7 @@ async def install_updates():
                     )
 
         # Restart the service
-        if platform.system() == "Linux":
-            subprocess.run(
-                ["sudo", "systemctl", "reset-failed", "pc-1.service"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-                check=False,
-            )
-            restart_result = subprocess.run(
-                ["sudo", "systemctl", "restart", "pc-1.service"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-
-            # systemctl restart returns 0 on success, but even if it returns non-zero,
-            # the service might still restart. Check the actual service status instead.
-            if restart_result.returncode != 0:
-                # Give it a moment and check if service is actually running
-                import time
-
-                time.sleep(3)
-                status_result = subprocess.run(
-                    ["systemctl", "is-active", "pc-1.service"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                # If service is active, the restart actually worked
-                if (
-                    status_result.returncode == 0
-                    and status_result.stdout.strip() == "active"
-                ):
-                    # Service is running, restart was successful
-                    pass
-                else:
-                    # Service might still be starting, but don't report failure yet
-                    # The frontend will handle the brief downtime
-                    pass
-
-            # Give the service a moment to start up
-            time.sleep(1)
+        _restart_pc1_service()
 
         return {
             "success": True,
@@ -2518,6 +2593,75 @@ async def install_updates():
         return {
             "success": False,
             "message": "Update failed",
+            "error": str(e),
+        }
+
+
+@app.post(
+    "/api/system/updates/convert-to-production",
+    dependencies=[Depends(require_admin_access)],
+)
+async def convert_to_production_updates():
+    """Convert a git-clone install into a production OTA install."""
+    try:
+        project_root = _get_project_root()
+        if not (project_root / ".git").exists():
+            return {
+                "success": False,
+                "message": "This unit already uses production OTA updates.",
+            }
+
+        release_repo = os.environ.get(
+            "PC1_UPDATE_GITHUB_REPO", "travmiller/paper-console"
+        ).strip()
+        expected_sha = os.environ.get("PC1_UPDATE_TARBALL_SHA256", "").strip().lower()
+
+        try:
+            tag_name = _install_release_bundle(
+                project_root,
+                release_repo,
+                expected_sha=expected_sha,
+            )
+        except Exception as e:
+            logger.exception("Production conversion failed")
+            return {
+                "success": False,
+                "message": "Conversion failed",
+                "error": str(e),
+            }
+
+        install_result = _install_update_dependencies(project_root, is_dev=False)
+        if install_result.returncode != 0:
+            logger.error(
+                "Dependency install after production conversion failed: %s",
+                (install_result.stderr or install_result.stdout or "").strip()[:500],
+            )
+            return {
+                "success": False,
+                "message": "Conversion failed",
+                "error": "Dependency installation failed. The running service was left unchanged.",
+            }
+
+        git_dir = project_root / ".git"
+        if git_dir.exists():
+            shutil.rmtree(git_dir)
+
+        _restart_pc1_service()
+
+        return {
+            "success": True,
+            "message": f"Converted to production updates using {tag_name}.",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "message": "Conversion timed out",
+            "error": "The conversion process took too long. Please try again.",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": "Conversion failed",
             "error": str(e),
         }
 
