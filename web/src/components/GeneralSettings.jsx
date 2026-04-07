@@ -503,20 +503,13 @@ const GeneralSettings = ({
             </div>
           )}
 
-          {installMode && (
+          {installMode === 'development' && (
             <div className='mb-4'>
               <div className='flex items-center justify-between gap-3'>
-                <div className='text-sm'>
-                  <span className='text-gray-600 font-bold'>Install Mode: </span>
-                  <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium border-2 ${
-                    installMode === 'development'
-                      ? 'bg-white text-black border-black'
-                      : 'bg-white text-gray-600 border-gray-300'
-                  }`}>
-                    {installMode === 'development' ? 'Development (git)' : 'Production (release)'}
-                  </span>
+                <div className='text-xs text-gray-600'>
+                  This unit is using git-based updates.
                 </div>
-                {installMode === 'development' && !installingUpdate && (
+                {!installingUpdate && (
                   <button
                     type='button'
                     onClick={() =>
@@ -529,16 +522,14 @@ const GeneralSettings = ({
                         failureFallback: 'Conversion failed. Please try again.',
                       })
                     }
-                    className='px-3 py-1.5 text-xs font-bold rounded-lg border-2 border-gray-300 bg-white text-black hover:border-black transition-all cursor-pointer'>
+                    className='text-xs font-bold text-black underline underline-offset-2 hover:text-gray-700 transition-colors cursor-pointer'>
                     Convert to Production
                   </button>
                 )}
               </div>
-              {installMode === 'development' && (
-                <p className='text-xs text-gray-600 mt-2 '>
-                  Switch this unit from git-based updates to release-based OTA updates using the latest published release.
-                </p>
-              )}
+              <p className='text-xs text-gray-600 mt-2 '>
+                Switch this unit from git-based updates to release-based OTA updates using the latest published release.
+              </p>
             </div>
           )}
 
