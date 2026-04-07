@@ -4084,47 +4084,104 @@ async def preview_webhook(config: dict):
 # --- CAPTIVE PORTAL (Auto-launch setup page) ---
 
 
+CAPTIVE_PORTAL_REDIRECT_URL = "http://10.42.0.1/"
+CAPTIVE_PORTAL_CACHE_BYPASS_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def _captive_portal_is_active() -> bool:
+    """Return True when the local setup AP is active."""
+    try:
+        return wifi_manager.is_ap_mode_active()
+    except Exception:
+        return False
+
+
+def _captive_portal_redirect() -> RedirectResponse:
+    """Redirect probe clients to the setup UI with no-cache headers."""
+    response = RedirectResponse(url=CAPTIVE_PORTAL_REDIRECT_URL, status_code=302)
+    for header_name, header_value in CAPTIVE_PORTAL_CACHE_BYPASS_HEADERS.items():
+        response.headers[header_name] = header_value
+    return response
+
+
+def _captive_portal_response(
+    *,
+    content: str = "",
+    status_code: int = 200,
+    media_type: str = "text/plain",
+) -> Response:
+    response = Response(content=content, status_code=status_code, media_type=media_type)
+    for header_name, header_value in CAPTIVE_PORTAL_CACHE_BYPASS_HEADERS.items():
+        response.headers[header_name] = header_value
+    return response
+
+
 @app.get("/hotspot-detect.html")
 @app.get("/library/test/success.html")
+@app.get("/success.html")
 async def captive_apple():
     """iOS/macOS captive portal detection - redirect to setup page."""
-    # Check if we're in AP mode
-    status = wifi_manager.get_wifi_status()
-    if status.get("mode") == "ap":
-        return RedirectResponse(url="/", status_code=302)
-    # If not in AP mode, return success (device has internet)
-    return {"status": "success"}
+    if _captive_portal_is_active():
+        return _captive_portal_redirect()
+    return _captive_portal_response(
+        content="<!DOCTYPE html><html><head><title>Success</title></head><body>Success</body></html>",
+        media_type="text/html",
+    )
 
 
 @app.get("/generate_204")
 @app.get("/gen_204")
+@app.get("/mobile/status.php")
 async def captive_android():
     """Android captive portal detection - redirect to setup page."""
-    status = wifi_manager.get_wifi_status()
-    if status.get("mode") == "ap":
-        return RedirectResponse(url="/", status_code=302)
-    # Return 204 No Content if not in AP mode (device has internet)
-    return Response(status_code=204)
+    if _captive_portal_is_active():
+        return _captive_portal_redirect()
+    return _captive_portal_response(status_code=204)
 
 
 @app.get("/connecttest.txt")
+async def captive_windows_connect_test():
+    """Windows 10+ captive portal detection."""
+    if _captive_portal_is_active():
+        return _captive_portal_redirect()
+    return _captive_portal_response(content="Microsoft Connect Test")
+
+
 @app.get("/ncsi.txt")
-async def captive_windows():
-    """Windows captive portal detection - redirect to setup page."""
-    status = wifi_manager.get_wifi_status()
-    if status.get("mode") == "ap":
-        return RedirectResponse(url="/", status_code=302)
-    # Return success text if not in AP mode
-    return Response(content="Microsoft Connect Test", media_type="text/plain")
+async def captive_windows_ncsi():
+    """Windows 8.1 and earlier captive portal detection."""
+    if _captive_portal_is_active():
+        return _captive_portal_redirect()
+    return _captive_portal_response(content="Microsoft NCSI")
+
+
+@app.get("/redirect")
+async def captive_windows_redirect():
+    """Windows passive connectivity redirect target."""
+    if _captive_portal_is_active():
+        return _captive_portal_redirect()
+    return _captive_portal_response(status_code=204)
 
 
 @app.get("/success.txt")
+@app.get("/canonical.html")
 async def captive_other():
-    """Generic captive portal detection."""
-    status = wifi_manager.get_wifi_status()
-    if status.get("mode") == "ap":
-        return RedirectResponse(url="/", status_code=302)
-    return {"status": "success"}
+    """Generic captive portal detection used by various clients."""
+    if _captive_portal_is_active():
+        return _captive_portal_redirect()
+    return _captive_portal_response(content="success\n")
+
+
+@app.get("/check_network_status.txt")
+async def captive_networkmanager():
+    """NetworkManager/Linux captive portal detection."""
+    if _captive_portal_is_active():
+        return _captive_portal_redirect()
+    return _captive_portal_response(content="NetworkManager is online\n")
 
 
 # --- STATIC FILES (FRONTEND) ---
