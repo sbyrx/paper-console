@@ -192,9 +192,7 @@ run_as_root find "$PROJECT_DIR" -type f \( -name "*.pyc" -o -name "*.pyo" \) -de
 run_as_root find "$PROJECT_DIR" -type d -name "*.egg-info" -prune -exec rm -rf {} + 2>/dev/null || true
 run_as_root rm -rf \
     "$PROJECT_DIR/.pytest_cache" \
-    "$PROJECT_DIR/testing/tmp" \
-    "$PROJECT_DIR/testing/print_gallery" \
-    "$PROJECT_DIR/testing/ui_gallery"
+    "$PROJECT_DIR/testing/artifacts"
 
 log "Disabling SSH and removing SSH identity"
 run_as_root systemctl stop ssh >/dev/null 2>&1 || true

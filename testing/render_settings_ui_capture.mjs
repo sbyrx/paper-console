@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
 const SESSION_COOKIE_NAME = "pc1_admin_session";
-const DEFAULT_OUTPUT_DIR = "testing/ui_gallery";
+const DEFAULT_OUTPUT_DIR = "testing/artifacts/ui";
 const DEFAULT_BASE_URL = "http://127.0.0.1:5173";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const DEFAULT_VIEWPORT_WIDTH = 480;

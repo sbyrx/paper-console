@@ -147,17 +147,17 @@ def get_rss_articles(config: Dict[str, Any] = None):
     config_schema={
         "type": "object",
         "properties": {
+            "rss_feeds": {
+                "type": "array", 
+                "title": "RSS Feed URLs",
+                "items": {"type": "string"}
+            },
             "num_articles": {
                 "type": "integer",
                 "title": "Articles to print from each feed",
                 "default": 2,
                 "minimum": 1,
                 "maximum": 10
-            },
-            "rss_feeds": {
-                "type": "array", 
-                "title": "RSS Feed URLs",
-                "items": {"type": "string"}
             }
         }
     },

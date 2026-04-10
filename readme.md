@@ -175,8 +175,8 @@ Available modules: **News API**, **RSS Feeds**, **Weather**, **Email Inbox**, **
 For non-Pi development, use the local test and snapshot workflows:
 
 * **Pytest:** `./testing/run_tests.sh`
-* **Print snapshots:** `./.venv/bin/python testing/render_all_prints.py --output-dir testing/print_gallery`
-* **Settings UI snapshots:** `./.venv/bin/python testing/render_settings_ui.py --output-dir testing/ui_gallery`
+* **Print snapshots:** `./.venv/bin/python testing/render_all_prints.py --output-dir testing/artifacts/print`
+* **Settings UI snapshots:** `./.venv/bin/python testing/render_settings_ui.py --output-dir testing/artifacts/ui`
 
 These workflows use mock/local paths and do not require Raspberry Pi GPIO packages.
 
@@ -272,9 +272,7 @@ paper-console/
 │   ├── render_settings_ui.py
 │   ├── console_raster_preview.py
 │   ├── run_tests.sh
-│   ├── print_gallery/
-│   ├── ui_gallery/
-│   └── tmp/
+│   └── artifacts/
 ├── development/                # BOM, internal docs, supporting scripts
 ├── icons/                      # Icon source assets
 ├── images/                     # Product photos used in the README

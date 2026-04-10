@@ -591,14 +591,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("testing/print_gallery"),
+        default=Path("testing/artifacts/print"),
         help="Output folder for full sweep mode.",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="Output PNG path for targeted mode (defaults to testing/tmp/<target>.png).",
+        help="Output PNG path for targeted mode (defaults to testing/artifacts/debug/<target>.png).",
     )
     parser.add_argument(
         "--exclude-interactive",
@@ -617,22 +617,22 @@ def parse_args() -> argparse.Namespace:
 def _default_target_output(args: argparse.Namespace) -> Path:
     if args.output:
         return args.output
-    tmp_dir = Path("testing/tmp")
+    debug_dir = Path("testing/artifacts/debug")
     if args.channel is not None:
-        return tmp_dir / f"channel_{args.channel}.png"
+        return debug_dir / f"channel_{args.channel}.png"
     if args.module_id:
         safe = args.module_id.replace("/", "_")
-        return tmp_dir / f"module_{safe}.png"
+        return debug_dir / f"module_{safe}.png"
     if args.module_type:
-        return tmp_dir / f"module_type_{args.module_type}.png"
+        return debug_dir / f"module_type_{args.module_type}.png"
     if args.system:
         mapping = {
             "setup": "system_setup_instructions.png",
             "first_boot": "system_first_boot_welcome.png",
             "ready": "system_ready.png",
         }
-        return tmp_dir / mapping[args.system]
-    return tmp_dir / "single_render.png"
+        return debug_dir / mapping[args.system]
+    return debug_dir / "single_render.png"
 
 
 def _run_targeted_render(args: argparse.Namespace, include_interactive: bool) -> int:

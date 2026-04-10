@@ -291,9 +291,7 @@ if [[ "$SKIP_PROJECT_BACKUP" -eq 0 ]]; then
     log "Creating full project backup (excluding .venv)"
     tar \
         --exclude='.venv' \
-        --exclude='testing/tmp' \
-        --exclude='testing/print_gallery' \
-        --exclude='testing/ui_gallery' \
+        --exclude='testing/artifacts' \
         -czf "$BACKUP_DIR/project-pre-conversion.tgz" \
         -C "$PROJECT_DIR" \
         .

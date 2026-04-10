@@ -20,16 +20,16 @@ For production OTA artifacts (non-git device updates), use `scripts/release_buil
 When validating printer output (layout, clipping, alignment, density, or black/white dot rendering), run this feedback loop:
 
 ```bash
-./.venv/bin/python testing/render_all_prints.py --module-type astronomy --output testing/tmp/feedback_full_print.png
-./.venv/bin/python testing/console_raster_preview.py --image testing/tmp/feedback_full_print.png --dots-width 384 --cols 96
+./.venv/bin/python testing/render_all_prints.py --module-type astronomy --output testing/artifacts/debug/feedback_full_print.png
+./.venv/bin/python testing/console_raster_preview.py --image testing/artifacts/debug/feedback_full_print.png --dots-width 384 --cols 96
 
-./.venv/bin/python testing/render_all_prints.py --channel 3 --output testing/tmp/feedback_full_print.png
-./.venv/bin/python testing/console_raster_preview.py --image testing/tmp/feedback_full_print.png --dots-width 384 --cols 96
+./.venv/bin/python testing/render_all_prints.py --channel 3 --output testing/artifacts/debug/feedback_full_print.png
+./.venv/bin/python testing/console_raster_preview.py --image testing/artifacts/debug/feedback_full_print.png --dots-width 384 --cols 96
 ```
 
 This workflow:
 - Renders the full receipt bitmap through the real print pipeline (`testing/render_all_prints.py`)
-- Saves PNG output under `testing/tmp/`
+- Saves PNG output under `testing/artifacts/debug/`
 - Prints a console dot-map preview from that exact full receipt image
 
 Use this fallback command only for synthetic calibration patterns:
@@ -59,7 +59,7 @@ Full sweep (complete up-to-date PNG gallery):
 Optional output directory:
 
 ```bash
-./.venv/bin/python testing/render_all_prints.py --output-dir testing/print_gallery
+./.venv/bin/python testing/render_all_prints.py --output-dir testing/artifacts/print
 ```
 
 Targeted single renders:

@@ -28,14 +28,14 @@ Unified print snapshot renderer:
 ```bash
 # Full sweep (overwrites output-dir PNGs)
 ./.venv/bin/python testing/render_all_prints.py
-./.venv/bin/python testing/render_all_prints.py --output-dir testing/print_gallery
+./.venv/bin/python testing/render_all_prints.py --output-dir testing/artifacts/print
 
 # Targeted renders (single PNG)
 ./.venv/bin/python testing/render_all_prints.py --channel 3
 ./.venv/bin/python testing/render_all_prints.py --module-id default-weather-001
 ./.venv/bin/python testing/render_all_prints.py --module-type astronomy
 ./.venv/bin/python testing/render_all_prints.py --system setup
-./.venv/bin/python testing/render_all_prints.py --module-type astronomy --output testing/tmp/astronomy_debug.png
+./.venv/bin/python testing/render_all_prints.py --module-type astronomy --output testing/artifacts/debug/astronomy_debug.png
 
 # Optional
 ./.venv/bin/python testing/render_all_prints.py --exclude-interactive
@@ -43,7 +43,7 @@ Unified print snapshot renderer:
 
 Notes:
 - Full sweep mode clears existing `*.png` files in the target folder and rewrites them.
-- Targeted mode writes a single image (default path under `testing/tmp/` unless `--output` is provided).
+- Targeted mode writes a single image (default path under `testing/artifacts/debug/` unless `--output` is provided).
 - Full sweep also renders all registered module types (including unassigned ones) and writes `failures.txt`.
 
 Settings UI snapshot renderer:
@@ -56,7 +56,7 @@ Settings UI snapshot renderer:
 ./.venv/bin/python testing/render_settings_ui.py --reuse-servers
 
 # Optional output folder (still rewritten each run)
-./.venv/bin/python testing/render_settings_ui.py --output-dir testing/ui_gallery
+./.venv/bin/python testing/render_settings_ui.py --output-dir testing/artifacts/ui
 
 # First run: install Playwright Chromium
 ./.venv/bin/python testing/render_settings_ui.py --install-browser
