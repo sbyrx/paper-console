@@ -87,6 +87,9 @@ def get_weather(config: Optional[Dict[str, Any]] = None):
         for _ in range(7)
     ]
     empty_hourly = []
+    temperature_unit = config.get("temperature_unit", "fahrenheit")
+    if not temperature_unit:
+        temperature_unit = "fahrenheit"
 
     try:
         url = "https://api.open-meteo.com/v1/forecast"
@@ -97,7 +100,7 @@ def get_weather(config: Optional[Dict[str, Any]] = None):
             "daily": "weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
             "hourly": "weathercode,temperature_2m,precipitation_probability",
             "timezone": timezone,
-            "temperature_unit": "fahrenheit",
+            "temperature_unit": temperature_unit,
             "forecast_days": 8,
             "forecast_hours": 24,
         }
@@ -215,6 +218,7 @@ def get_weather(config: Optional[Dict[str, Any]] = None):
             "city": city_name,
             "forecast": forecast,
             "hourly_forecast": hourly_forecast,
+            "temperature_unit": temperature_unit
         }
 
     except Exception:
@@ -355,18 +359,21 @@ def _draw_left_text(
     return text_h
 
 
-def _format_temperature(value: Any, include_unit: bool = False) -> str:
+def _format_temperature(value: Any, units: str = '') -> str:
     """Format temperatures using ASCII-only output for thermal printer reliability."""
     if value in (None, "", "--"):
         return "--"
 
     try:
         temp_int = int(round(float(value)))
+        units = str(units)
     except (TypeError, ValueError):
         return str(value)
-
-    return f"{temp_int}F" if include_unit else f"{temp_int}"
-
+    
+    if units == '':
+        return f"{temp_int}"
+    else:
+        return f"{temp_int}{units[0].upper()}"
 
 def _describe_precipitation(condition: str) -> str:
     """Map forecast condition text to a simple precipitation label."""
@@ -434,8 +441,8 @@ def _build_24_hour_summary(weather: Dict[str, Any]) -> str:
         lead = "Next 24 hours: Mixed conditions"
 
     if temps:
-        low = min(temps)
-        high = max(temps)
+        low = _format_temperature(min(temps), weather.get("temperature_unit"))
+        high = _format_temperature(max(temps), weather.get("temperature_unit"))
         trend = ""
         if start_temp is not None and end_temp is not None:
             delta = end_temp - start_temp
@@ -445,7 +452,7 @@ def _build_24_hour_summary(weather: Dict[str, Any]) -> str:
                 trend = " Temperatures trend cooler through the day."
             else:
                 trend = " Temperatures stay fairly steady."
-        lead = f"{lead}, with temperatures between {low}F and {high}F.{trend}"
+        lead = f"{lead}, with temperatures between {low} and {high}.{trend}"
     else:
         lead = f"{lead}."
 
@@ -490,9 +497,9 @@ def draw_current_conditions_panel(
     city = str(weather.get("city") or "LOCATION").upper()
     section_title = "CURRENT WEATHER"
     condition = str(weather.get("condition") or "Unavailable")
-    temperature = _format_temperature(weather.get("current"), include_unit=True)
-    high = _format_temperature(weather.get("high"), include_unit=True)
-    low = _format_temperature(weather.get("low"), include_unit=True)
+    temperature = _format_temperature(weather.get("current"), weather.get("temperature_unit"))
+    high = _format_temperature(weather.get("high"), weather.get("temperature_unit"))
+    low = _format_temperature(weather.get("low"), weather.get("temperature_unit"))
     stats_line = f"H {high}   L {low}"
     date_line = datetime.now().strftime("%a, %b %d, %Y")
     icon_type = _get_icon_type(condition)
@@ -825,6 +832,12 @@ def draw_hourly_forecast_image(
                     "zipcode": {"type": "string"},
                 },
                 "required": ["city_name", "latitude", "longitude"],
+            },
+            "temperature_unit": {
+                "type": "string",
+                "title": "Temperature Unit",
+                "enum": ["fahrenheit", "celsius"],
+                "default": "fahrenheit"
             }
         },
     },
@@ -861,11 +874,11 @@ def format_weather_receipt(
     else:
         # Fallback to text-only output if panel render fails.
         printer.print_subheader((weather.get("city") or "LOCATION").upper())
-        printer.print_text(_format_temperature(weather.get("current"), include_unit=True), "bold_lg")
+        printer.print_text(_format_temperature(weather.get("current"), weather.get("temperature_unit")), "bold_lg")
         printer.print_body(weather.get("condition") or "Unavailable")
         printer.print_body(
-            f"High {_format_temperature(weather.get('high'), include_unit=True)} | "
-            f"Low {_format_temperature(weather.get('low'), include_unit=True)}"
+            f"High {_format_temperature(weather.get('high'),weather.get("temperature_unit"))} | "
+            f"Low {_format_temperature(weather.get('low'), weather.get("temperature_unit"))}"
         )
     printer.print_body(_build_24_hour_summary(weather))
     printer.feed(1)
