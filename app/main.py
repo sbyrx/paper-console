@@ -3545,6 +3545,18 @@ def _normalize_text_module_config(module: ModuleInstance) -> None:
     module.config = config
 
 
+def _convert_and_resize_image_module_config(module: ModuleInstance) -> None:
+    """Compact uploaded image data before storing it in config.json."""
+    if module.type != "image" or not module.config:
+        return
+
+    image_data = module.config.get("image_data")
+    if isinstance(image_data, str) and image_data.startswith("data:"):
+        from app.modules.print_image import resize_and_convert_image
+
+        module.config["image_data"] = resize_and_convert_image(image_data)
+
+
 @app.post("/api/modules", dependencies=[Depends(require_admin_access)])
 async def create_module(module: ModuleInstance, background_tasks: BackgroundTasks):
     """Create a new module instance."""
@@ -3555,6 +3567,7 @@ async def create_module(module: ModuleInstance, background_tasks: BackgroundTask
         module.id = str(uuid.uuid4())
 
     _normalize_text_module_config(module)
+    _convert_and_resize_image_module_config(module)
     settings.modules[module.id] = module
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
 
@@ -3584,6 +3597,7 @@ async def update_module(
     # Ensure ID matches
     module.id = module_id
     _normalize_text_module_config(module)
+    _convert_and_resize_image_module_config(module)
     settings.modules[module_id] = module
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
 
