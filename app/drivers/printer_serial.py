@@ -1061,12 +1061,13 @@ class PrinterDriver:
             command[0:4] = b"\x1d\x76\x30\x00"  # GS v 0 command
             command[4:8] = bytes([xL, xH, yL, yH])
 
-            # PIL 1-bit mode: 0 = black, 255 = white (packed into bytes)
-            # Printer expects: 1 = black dot, 0 = white
-            # PIL packs 8 pixels per byte, MSB first, but inverted from what printer expects
-            # So we need to invert the bytes
-            for i, byte in enumerate(pixels):
-                command[8 + i] = byte ^ 0xFF  # Invert bits
+            # PIL 1-bit mode uses 0 for black and 255 for white.
+            # Printer expects 1 for black and 0 for white.
+            # Using translate is significantly faster than a Python loop for large images.
+            inv_table = bytes.maketrans(
+                bytes(range(256)), bytes([b ^ 0xFF for b in range(256)])
+            )
+            command[8:] = pixels.translate(inv_table)
 
             # Send entire image in chunks to prevent buffer overflow
             print(f"[DEBUG] Sending bitmap: {width}x{height} ({len(command)} bytes)")
@@ -1235,6 +1236,15 @@ class PrinterDriver:
             # ESC @ - Hardware reset (clears all settings)
             self._write(b"\x1b\x40")
             time.sleep(0.3)
+
+            # --- PERFORMANCE TUNING (ESC 7) ---
+            # Command: ESC 7 n1 n2 n3 (Control Parameter Setting)
+            # n1: Max printing dots (0-255, unit 8 dots). Default ~7 (56 dots).
+            # n2: Heating time (3-255, unit 10us). Default ~80 (800us).
+            # n3: Heating interval (0-255, unit 10us). Default ~2 (20us).
+            # These values (20, 120, 10) increase the sweep speed and thermal density.
+            # Note: Requires a high-quality 2A+ power supply.
+            self._write(b"\x1b\x37" + bytes([20, 120, 10]))
 
             # Apply ASCII settings
             self._apply_ascii_settings()
