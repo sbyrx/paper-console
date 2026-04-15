@@ -496,7 +496,7 @@ def _resolve_view_mode(config: CalendarConfig) -> str:
                     "type": "object",
                     "properties": {
                         "url": {"type": "string", "title": "iCal URL"},
-                        "name": {"type": "string", "title": "Label (Optional)"},
+                        "label": {"type": "string", "title": "Label (Optional)"},
                     }
                 }
             },
