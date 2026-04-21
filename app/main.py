@@ -1941,6 +1941,31 @@ def _should_include_prereleases() -> bool:
     return _get_release_channel() == "beta"
 
 
+def _select_release_from_list(
+    releases: object,
+    *,
+    include_prerelease: bool,
+) -> Dict[str, object]:
+    if not isinstance(releases, list):
+        raise RuntimeError("Release server returned an unexpected response.")
+
+    target_lane = "beta" if include_prerelease else "stable"
+
+    for release_data in releases:
+        if not isinstance(release_data, dict):
+            continue
+        if release_data.get("draft"):
+            continue
+
+        is_prerelease = bool(release_data.get("prerelease"))
+        if include_prerelease != is_prerelease:
+            continue
+
+        return release_data
+
+    raise RuntimeError(f"No published {target_lane} releases are available.")
+
+
 def _fetch_release_data(
     release_repo: str,
     *,
@@ -1966,18 +1991,10 @@ def _fetch_release_data(
             timeout=10,
         )
         release_resp.raise_for_status()
-        releases = release_resp.json()
-        if not isinstance(releases, list):
-            raise RuntimeError("Release server returned an unexpected response.")
-
-        for release_data in releases:
-            if not isinstance(release_data, dict):
-                continue
-            if release_data.get("draft"):
-                continue
-            return release_data
-
-        raise RuntimeError("No published releases are available.")
+        return _select_release_from_list(
+            release_resp.json(),
+            include_prerelease=True,
+        )
 
     release_resp = requests.get(
         f"https://api.github.com/repos/{release_repo}/releases/latest",
@@ -2394,6 +2411,14 @@ async def check_for_updates():
                 release_repo,
                 include_prerelease=_should_include_prereleases(),
             )
+        except RuntimeError as e:
+            return {
+                "available": False,
+                "message": "Could not check for updates",
+                "error": str(e),
+                "current_version": current_version,
+                "release_channel": release_channel,
+            }
         except Exception:
             return {
                 "available": False,

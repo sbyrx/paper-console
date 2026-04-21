@@ -161,7 +161,7 @@ def test_get_current_version_reports_production_install_mode(monkeypatch, tmp_pa
     assert result["can_convert_to_production"] is False
 
 
-def test_fetch_release_data_prefers_latest_published_release_when_beta_enabled(monkeypatch):
+def test_fetch_release_data_prefers_latest_beta_release_when_beta_enabled(monkeypatch):
     captured = {}
 
     class DummyResponse:
@@ -170,8 +170,8 @@ def test_fetch_release_data_prefers_latest_published_release_when_beta_enabled(m
 
         def json(self):
             return [
-                {"tag_name": "v0.2.0-beta.1", "draft": False, "prerelease": True},
                 {"tag_name": "v0.1.9", "draft": False, "prerelease": False},
+                {"tag_name": "v0.2.0-beta.1", "draft": False, "prerelease": True},
             ]
 
     def fake_requests_get(url, headers=None, timeout=None):  # noqa: ARG001
@@ -191,6 +191,38 @@ def test_fetch_release_data_prefers_latest_published_release_when_beta_enabled(m
 
     assert captured["url"].endswith("/releases")
     assert result["tag_name"] == "v0.2.0-beta.1"
+
+
+def test_fetch_release_data_raises_when_no_beta_release_exists(monkeypatch):
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [
+                {"tag_name": "v0.1.9", "draft": False, "prerelease": False},
+                {"tag_name": "v0.1.8", "draft": False, "prerelease": False},
+            ]
+
+    def fake_requests_get(url, headers=None, timeout=None):  # noqa: ARG001
+        assert url.endswith("/releases")
+        return DummyResponse()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "requests",
+        types.SimpleNamespace(get=fake_requests_get),
+    )
+
+    try:
+        main_module._fetch_release_data(
+            "travmiller/paper-console",
+            include_prerelease=True,
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "No published beta releases are available."
+    else:
+        raise AssertionError("Expected RuntimeError when no beta releases exist")
 
 
 def test_check_for_updates_uses_beta_channel_in_production(monkeypatch, tmp_path):
@@ -234,6 +266,48 @@ def test_check_for_updates_uses_beta_channel_in_production(monkeypatch, tmp_path
     assert result["current_version"] == "v0.1.0"
     assert result["latest_version"] == "v0.2.0-beta.1"
     assert result["release_channel"] == "beta"
+
+
+def test_check_for_updates_reports_when_beta_lane_is_empty(monkeypatch, tmp_path):
+    project_root = tmp_path / "project"
+    app_dir = project_root / "app"
+    app_dir.mkdir(parents=True)
+    fake_main_path = app_dir / "main.py"
+    fake_main_path.write_text("# test stub\n", encoding="utf-8")
+    (project_root / ".version").write_text("v0.1.0\n", encoding="utf-8")
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [
+                {"tag_name": "v0.1.9", "draft": False, "prerelease": False},
+            ]
+
+    def fake_requests_get(url, headers=None, timeout=None):  # noqa: ARG001
+        assert url.endswith("/releases")
+        return DummyResponse()
+
+    monkeypatch.setattr(main_module, "__file__", str(fake_main_path))
+    monkeypatch.setattr(
+        main_module,
+        "settings",
+        types.SimpleNamespace(release_channel="beta"),
+        raising=False,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "requests",
+        types.SimpleNamespace(get=fake_requests_get),
+    )
+
+    result = asyncio.run(main_module.check_for_updates())
+
+    assert result["available"] is False
+    assert result["current_version"] == "v0.1.0"
+    assert result["release_channel"] == "beta"
+    assert result["error"] == "No published beta releases are available."
 
 
 def test_convert_to_production_installs_release_and_removes_git(monkeypatch, tmp_path):

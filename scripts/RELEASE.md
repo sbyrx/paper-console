@@ -111,9 +111,9 @@ OTA behavior:
 
 Current implementation note:
 
-- The beta channel currently follows the newest published non-draft release returned by GitHub's full releases list, not a separately labeled "latest beta" concept.
-- If you publish a newer stable release after a beta release, beta-enabled devices may follow that newer stable release.
-- If you need a strictly isolated beta lane, use a separate beta release repo until update-channel behavior becomes more specific.
+- Devices on the `beta` channel only receive published prereleases.
+- Devices on the `stable` channel only receive published stable releases.
+- Switching the **Beta Releases** toggle in General Settings changes which lane the device checks immediately.
 
 ## Day-to-day release checklist
 
