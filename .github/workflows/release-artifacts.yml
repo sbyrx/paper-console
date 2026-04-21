@@ -52,6 +52,12 @@ jobs:
       - name: Run test suite
         run: python -m pytest testing -q
 
+      - name: Reset release artifact directory
+        shell: bash
+        run: |
+          rm -rf release-artifacts
+          mkdir -p release-artifacts
+
       - name: Build release artifacts
         run: |
           python scripts/release_build.py \
