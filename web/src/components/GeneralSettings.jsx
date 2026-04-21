@@ -525,6 +525,9 @@ const GeneralSettings = ({
                         ? 'bg-black text-white'
                         : 'bg-transparent text-black hover:bg-gray-100'
                     }`}
+                    style={{
+                      color: selected ? 'var(--color-bg-card)' : 'var(--color-text-main)',
+                    }}
                     aria-pressed={selected}
                     onClick={() => {
                       if (selected) return;
