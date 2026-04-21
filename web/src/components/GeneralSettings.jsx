@@ -528,6 +528,14 @@ const GeneralSettings = ({
                     aria-pressed={selected}
                     onClick={() => {
                       if (selected) return;
+                      if (
+                        channel === 'beta' &&
+                        !window.confirm(
+                          'Switch to beta releases? Beta updates may be less stable than regular releases and could include unfinished changes.',
+                        )
+                      ) {
+                        return;
+                      }
                       setUpdateStatus(null);
                       setUpdateMessage({ type: '', message: '' });
                       saveGlobalSettings({ release_channel: channel });
