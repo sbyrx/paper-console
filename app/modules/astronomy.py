@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Tuple
 from PIL import Image, ImageDraw
 
 import app.config
-from app.config import format_time
+from app.config import format_print_datetime, format_time
 from app.module_registry import register_module
 
 # Dynamic Location from Config
@@ -394,7 +394,7 @@ def format_astronomy_receipt(printer, config: Dict[str, Any] = None, module_name
     data = get_almanac_data()
     
     printer.print_header(module_name or "ASTRONOMY", icon="moon-stars")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
     
     # Location

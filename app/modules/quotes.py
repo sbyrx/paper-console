@@ -2,6 +2,7 @@ import json
 import random
 from typing import Dict, Any
 from pathlib import Path
+from app.config import format_print_datetime
 from app.module_registry import register_module
 
 
@@ -61,15 +62,13 @@ def format_quotes_receipt(
     printer, config: Dict[str, Any] = None, module_name: str = None
 ):
     """Prints a random quote."""
-    from datetime import datetime
-
     quote = get_random_quote()
     text = quote.get("quoteText", "")
     author = quote.get("quoteAuthor", "Unknown")
 
     # Header
     printer.print_header(module_name or "QUOTE", icon="quotes")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
 
     # Quote body in italics-style (using medium weight for emphasis)

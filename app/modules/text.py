@@ -1,5 +1,5 @@
 from typing import Any, Dict, List
-from app.config import TextConfig
+from app.config import TextConfig, format_print_datetime
 from app.drivers.printer_mock import PrinterDriver
 from app.module_registry import register_module
 
@@ -32,11 +32,9 @@ DEFAULT_CONTENT_DOC = {"type": "doc", "content": [{"type": "paragraph"}]}
 )
 def format_text_receipt(printer: PrinterDriver, config: TextConfig, module_name: str = None):
     """Prints a static text note from a TipTap JSON document."""
-    from datetime import datetime
-    
     header_label = module_name or "NOTE"
     printer.print_header(header_label, icon="note")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
     
     content_doc = _normalize_content_doc(config.content_doc)

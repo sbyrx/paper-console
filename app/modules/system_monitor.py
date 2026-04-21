@@ -7,6 +7,7 @@ from typing import Dict, Any
 from app.wifi_manager import get_wifi_status
 from app.utils import wrap_text
 from app.module_registry import register_module
+from app.config import format_print_datetime
 from PIL import Image, ImageDraw
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ def format_system_monitor_receipt(
 
     # Header
     printer.print_header(module_name or "SYSTEM", icon="desktop")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
 
     # Network Info

@@ -251,12 +251,12 @@ def format_sudoku_receipt(
     if config and "difficulty" in config:
         difficulty = config["difficulty"]
 
-    from datetime import datetime
+    from app.config import format_print_datetime
 
     grid = generate_puzzle(difficulty)
 
     printer.print_header(module_name or "SUDOKU", icon="grid-nine")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_subheader(f"Difficulty: {difficulty.title()}")
 
     # Render grid as full width (384 dots - 4px borders) / 9 cells = ~42px per cell

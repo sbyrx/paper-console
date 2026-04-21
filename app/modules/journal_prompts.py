@@ -1,10 +1,10 @@
 import json
 import random
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
+from app.config import format_print_datetime
 from app.module_registry import register_module
 
 
@@ -82,6 +82,6 @@ def format_journal_prompt_receipt(
     prompt = get_random_prompt()
 
     printer.print_header(module_name or "JOURNAL PROMPT", icon="book")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
     printer.print_body(prompt)

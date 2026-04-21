@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from icalendar import Calendar
 from dateutil.rrule import rrulestr
 from app.drivers.printer_mock import PrinterDriver
-from app.config import CalendarConfig, format_time
+from app.config import CalendarConfig, format_print_datetime, format_time
 import app.config
 from app.module_registry import register_module
 from PIL import Image, ImageDraw
@@ -524,7 +524,7 @@ def format_calendar_receipt(
 
     header_label = module_name or "CALENDAR"
     printer.print_header(header_label, icon="calendar-blank")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.feed(1)
 
     # Collect calendar sources

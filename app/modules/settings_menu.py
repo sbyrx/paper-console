@@ -15,7 +15,6 @@ Options:
 
 import logging
 from typing import Dict, Any
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +31,10 @@ from app.selection_mode import (
 
 def _print_channels(printer):
     """Print what's assigned to each channel."""
-    from app.config import settings
+    from app.config import format_print_datetime, settings
     
     printer.print_header("CHANNELS", icon="list")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
     
     for channel_num in range(1, 9):
@@ -194,8 +193,10 @@ def _do_factory_reset(printer):
 
 def _show_main_menu(printer, module_id: str, module_name: str = None):
     """Print the main settings menu."""
+    from app.config import current_datetime, format_time
+
     printer.print_header(module_name or "SETTINGS", icon="settings")
-    printer.print_caption(datetime.now().strftime("%I:%M %p"))
+    printer.print_caption(format_time(current_datetime()))
     printer.print_line()
     
     printer.print_body("  [1] Show Channels")

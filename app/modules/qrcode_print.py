@@ -11,9 +11,8 @@ Supports multiple QR code types:
 - Email addresses
 """
 
-from app.config import QRCodeConfig
+from app.config import QRCodeConfig, format_print_datetime
 from app.drivers.printer_mock import PrinterDriver
-from datetime import datetime
 from app.module_registry import register_module
 from app.wifi_manager import generate_wifi_qr_payload
 
@@ -156,7 +155,7 @@ def format_qrcode_receipt(printer: PrinterDriver, config: dict, module_name: str
     header_label = module_name or "QR CODE"
     
     printer.print_header(header_label)
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
     
     # Generate QR code data based on type

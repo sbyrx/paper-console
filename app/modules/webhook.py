@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 from PIL import Image
 from app.drivers.printer_mock import PrinterDriver
-from app.config import WebhookConfig
+from app.config import WebhookConfig, format_print_datetime
 from app.module_registry import register_module
 
 logger = logging.getLogger(__name__)
@@ -201,11 +201,9 @@ def run_webhook(action: WebhookConfig, printer: PrinterDriver, module_name: str 
     Executes a custom webhook action and prints the result.
     Supports JSON path extraction to print specific fields.
     """
-    from datetime import datetime
-
     header_label = module_name or "WEBHOOK"
     printer.print_header(header_label, icon="plugs")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
 
     try:

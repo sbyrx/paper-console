@@ -1,8 +1,7 @@
 import requests
-from datetime import datetime
 from typing import Dict, Any
 from urllib.parse import urlparse, urlunparse
-from app.config import settings
+from app.config import format_print_datetime, settings
 from app.module_registry import register_module
 
 
@@ -118,7 +117,7 @@ def format_news_receipt(
 
     # Header with date
     printer.print_header(module_name or "NEWS", icon="newspaper")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
 
     if not news_data:

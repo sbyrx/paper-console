@@ -734,10 +734,9 @@ async def check_first_boot():
                 # Visual header with inline icon (no feed before - content starts immediately)
                 printer.print_header("SYSTEM READY", icon="check", icon_size=28)
 
-                from datetime import datetime
+                from app.config import format_print_datetime
 
-                printer.print_bold(datetime.now().strftime("%A, %B %d, %Y"))
-                printer.print_bold(datetime.now().strftime("%I:%M %p"))
+                printer.print_bold(format_print_datetime())
 
                 printer.print_line()
 

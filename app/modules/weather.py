@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw
 
 import app.config
 from app.drivers.printer_mock import PrinterDriver
+from app.config import format_print_datetime
 from app.module_registry import register_module
 
 
@@ -504,7 +505,7 @@ def draw_current_conditions_panel(
     high = _format_temperature(weather.get("high"), weather.get("temperature_unit"))
     low = _format_temperature(weather.get("low"), weather.get("temperature_unit"))
     stats_line = f"H {high}   L {low}"
-    date_line = datetime.now().strftime("%a, %b %d, %Y")
+    date_line = format_print_datetime(date_format="%a, %b %d, %Y")
     icon_type = _get_icon_type(condition)
 
     date_h = font_caption.getbbox(date_line)[3] - font_caption.getbbox(date_line)[1]

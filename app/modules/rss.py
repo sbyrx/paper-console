@@ -1,10 +1,9 @@
 import feedparser
 import requests
-from datetime import datetime
 from typing import Dict, Any
 from bs4 import BeautifulSoup
 import re
-from app.config import settings
+from app.config import format_print_datetime, settings
 from app.modules.news import clean_url
 from app.module_registry import register_module
 
@@ -174,7 +173,7 @@ def format_rss_receipt(printer, config: Dict[str, Any] = None, module_name: str 
 
     # Header
     printer.print_header(module_name or "RSS FEEDS", icon="rss")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
 
     if not articles:

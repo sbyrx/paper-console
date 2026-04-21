@@ -286,7 +286,7 @@ def draw_maze_image(grid: List[List[int]], cell_size: int = 8) -> Image.Image:
 )
 def format_maze_receipt(printer, config: Dict[str, Any] = None, module_name: str = None):
     """Prints a challenging Maze puzzle."""
-    from datetime import datetime
+    from app.config import format_print_datetime
     
     # Difficulty mapping
     difficulty = config.get("difficulty", "Hard") if config else "Hard"
@@ -304,7 +304,7 @@ def format_maze_receipt(printer, config: Dict[str, Any] = None, module_name: str
     
     # Header
     printer.print_header(module_name or "MAZE", icon="path")
-    printer.print_caption(datetime.now().strftime("%A, %B %d, %Y"))
+    printer.print_caption(format_print_datetime())
     printer.print_line()
     printer.print_subheader("START ↑  ·  END ↓")
     printer.print_line()

@@ -480,5 +480,31 @@ def format_time(dt: datetime, time_format: Optional[str] = None) -> str:
         )  # Remove leading zero, e.g., "3:45 PM" instead of "03:45 PM"
 
 
+def current_datetime() -> datetime:
+    """Return the current datetime in the configured timezone."""
+    try:
+        import pytz
+
+        tz = pytz.timezone(settings.timezone)
+        return datetime.now(tz)
+    except Exception:
+        return datetime.now()
+
+
+def format_print_datetime(
+    dt: Optional[datetime] = None,
+    time_format: Optional[str] = None,
+    date_format: str = "%A, %B %d, %Y",
+) -> str:
+    """
+    Format a timestamp for receipt headers.
+
+    Returns strings like "Tuesday, April 21, 2026 3:45 PM" or
+    "Tuesday, April 21, 2026 15:45", depending on the time_format setting.
+    """
+    dt = dt or current_datetime()
+    return f"{dt.strftime(date_format)} {format_time(dt, time_format)}"
+
+
 # Global settings instance
 settings = load_config()

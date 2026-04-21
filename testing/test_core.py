@@ -1,12 +1,13 @@
 """Pytest suite for PC-1 core behaviors."""
 
 import hashlib
+from datetime import datetime
 
 import app.device_password as device_password
 import app.modules  # noqa: F401 - triggers module auto-registration
 import app.utils as utils
 import app.wifi_manager as wifi_manager
-from app.config import Settings
+from app.config import Settings, format_print_datetime
 from app.module_registry import get_all_modules, validate_module_config
 
 
@@ -26,6 +27,19 @@ def test_default_settings_exclude_removed_module_types():
 def test_default_settings_use_stable_release_channel():
     settings = Settings()
     assert settings.release_channel == "stable"
+
+
+def test_print_datetime_includes_configured_time_format():
+    dt = datetime(2026, 4, 21, 16, 5)
+
+    assert (
+        format_print_datetime(dt, time_format="12h")
+        == "Tuesday, April 21, 2026 4:05 PM"
+    )
+    assert (
+        format_print_datetime(dt, time_format="24h")
+        == "Tuesday, April 21, 2026 16:05"
+    )
 
 
 def test_default_module_configs_are_registered_and_valid():
