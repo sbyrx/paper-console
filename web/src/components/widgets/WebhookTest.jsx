@@ -68,9 +68,22 @@ const WebhookTest = ({ formData = {} }) => {
                   Extracted from: <code className="bg-gray-200 px-1 rounded">{result.json_path}</code>
                 </div>
               )}
-              <div className="bg-white border border-gray-200 rounded p-2 font-mono text-xs whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
-                {result.content}
-              </div>
+              {result.content_type === 'image' && result.preview_data_url ? (
+                <div className="bg-white border border-gray-200 rounded p-2">
+                  <img
+                    src={result.preview_data_url}
+                    alt="Webhook response preview"
+                    className="block max-w-full max-h-48 mx-auto object-contain"
+                  />
+                  <div className="mt-2 text-center text-xs text-gray-500">
+                    {result.content}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded p-2 font-mono text-xs whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                  {result.content}
+                </div>
+              )}
             </>
           ) : (
             <>

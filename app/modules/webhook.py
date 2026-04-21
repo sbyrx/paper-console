@@ -41,6 +41,14 @@ WEBHOOK_PRESETS = {
         "headers": {},
         "body": "",
         "json_path": "fact"
+    },
+    "sample_image": {
+        "label": "Sample Image",
+        "url": "https://httpbin.org/image/png",
+        "method": "GET",
+        "headers": {},
+        "body": "",
+        "json_path": ""
     }
 }
 
@@ -77,7 +85,7 @@ def _print_image_response(response, printer: PrinterDriver) -> bool:
              "preset": {
                  "type": "string",
                  "title": "Preset",
-                 "enum": ["custom", "dad_jokes", "chuck_norris", "cat_facts"],
+                 "enum": ["custom", "dad_jokes", "chuck_norris", "cat_facts", "sample_image"],
                  "default": "custom"
              },
              "url": {"type": "string", "title": "URL"},

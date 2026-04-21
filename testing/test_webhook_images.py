@@ -86,3 +86,12 @@ def test_webhook_preview_reports_image_response(monkeypatch):
     assert result["success"] is True
     assert result["content_type"] == "image"
     assert result["content"] == "Image response: image/png (12x6)"
+    assert result["preview_data_url"].startswith("data:image/png;base64,")
+
+
+def test_webhook_presets_include_sample_image():
+    preset = webhook.WEBHOOK_PRESETS["sample_image"]
+
+    assert preset["url"] == "https://httpbin.org/image/png"
+    assert preset["method"] == "GET"
+    assert preset["json_path"] == ""

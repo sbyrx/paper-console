@@ -4258,17 +4258,24 @@ async def preview_webhook(config: dict):
             ].strip().lower()
             if content_type.startswith("image/"):
                 try:
+                    import base64
                     import io
                     from PIL import Image
 
                     with Image.open(io.BytesIO(response.content)) as image:
                         dimensions = f"{image.width}x{image.height}"
+                    preview_data_url = (
+                        f"data:{content_type};base64,"
+                        f"{base64.b64encode(response.content).decode('ascii')}"
+                    )
                 except Exception:
                     dimensions = "unknown size"
+                    preview_data_url = ""
                 return {
                     "success": True,
                     "content": f"Image response: {content_type} ({dimensions})",
                     "content_type": "image",
+                    "preview_data_url": preview_data_url,
                     "status_code": response.status_code,
                 }
 
