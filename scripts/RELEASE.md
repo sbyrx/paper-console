@@ -28,6 +28,12 @@ On Windows, run this command from WSL.
 
 Artifacts are written to `release-artifacts/` by default.
 
+Local artifact note:
+
+- Locally generated artifacts are for sanity-checking only. After the tag-driven GitHub release publishes successfully, the GitHub release assets are the canonical OTA artifacts.
+- Remove any untracked local artifacts for that version after publishing, unless you explicitly need to keep a copy for device-side manual testing.
+- Do not commit ad hoc local release artifacts as part of normal stable or beta release prep.
+
 ## Release automation
 
 The canonical publish path is a Git tag push.
@@ -121,17 +127,21 @@ For a stable release:
 
 1. Merge the intended changes to `main`.
 2. Run local tests and build checks.
-3. Push `vX.Y.Z`.
-4. Confirm the GitHub release published successfully.
-5. Confirm a production device on the stable channel sees the update in General Settings.
+3. Run `npm audit` in `web/` and fix audit findings before tagging.
+4. If dependency fixes rebuild `web/dist`, commit the lockfile and generated dist assets before tagging.
+5. Push `vX.Y.Z`.
+6. Confirm the GitHub release published successfully.
+7. Confirm a production device on the stable channel sees the update in General Settings.
 
 For a beta release:
 
 1. Merge the intended changes to `main`.
 2. Run local tests and build checks.
-3. Push `vX.Y.Z-beta.N` or `vX.Y.Z-rc.N`.
-4. Confirm GitHub marked the release as a prerelease.
-5. Confirm a production device with **Beta Releases** enabled sees the update in General Settings.
+3. Run `npm audit` in `web/` and fix audit findings before tagging.
+4. If dependency fixes rebuild `web/dist`, commit the lockfile and generated dist assets before tagging.
+5. Push `vX.Y.Z-beta.N` or `vX.Y.Z-rc.N`.
+6. Confirm GitHub marked the release as a prerelease.
+7. Confirm a production device with **Beta Releases** enabled sees the update in General Settings.
 
 ## Factory image guidance
 
