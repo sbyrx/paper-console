@@ -69,3 +69,23 @@ def test_set_device_password_updates_managed_file(monkeypatch, tmp_path: Path):
 
     assert password_file.read_text(encoding="utf-8").strip() == "new-password-456"
     assert device_password.get_device_password() == "new-password-456"
+
+
+def test_reset_device_password_updates_managed_file(monkeypatch, tmp_path: Path):
+    password_file = tmp_path / "device_password"
+    managed_file = tmp_path / "device_managed"
+    password_file.write_text("old-password\n", encoding="utf-8")
+    managed_file.write_text("1\n", encoding="utf-8")
+
+    monkeypatch.setenv("PC1_DEVICE_PASSWORD_FILE", str(password_file))
+    monkeypatch.setenv("PC1_DEVICE_MANAGED_FILE", str(managed_file))
+    monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
+    monkeypatch.setattr(
+        device_password,
+        "generate_device_password",
+        lambda length=device_password.DEFAULT_DEVICE_PASSWORD_LENGTH: "freshpass",
+    )
+
+    assert device_password.reset_device_password() == "freshpass"
+    assert password_file.read_text(encoding="utf-8").strip() == "freshpass"
+    assert device_password.get_device_password() == "freshpass"

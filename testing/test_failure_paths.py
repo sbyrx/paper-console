@@ -654,6 +654,59 @@ def test_factory_reset_success_path(monkeypatch):
     assert result["errors"] == []
 
 
+def test_factory_reset_resets_managed_device_password(monkeypatch, tmp_path: Path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "config.json").write_text("{}", encoding="utf-8")
+    (project_root / "config.json.bak").write_text("{}", encoding="utf-8")
+    (project_root / ".welcome_printed").write_text("1\n", encoding="utf-8")
+
+    password_file = tmp_path / "etc" / "pc1" / "device_password"
+    managed_file = tmp_path / "etc" / "pc1" / "device_managed"
+    password_file.parent.mkdir(parents=True)
+    password_file.write_text("old-password\n", encoding="utf-8")
+    managed_file.write_text("1\n", encoding="utf-8")
+
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(
+        factory_reset_module,
+        "_project_base_dir",
+        lambda: str(project_root),
+    )
+    monkeypatch.setattr(factory_reset_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        factory_reset_module.wifi_manager, "forget_all_wifi", lambda: True
+    )
+    monkeypatch.setattr(
+        factory_reset_module.device_password,
+        "generate_device_password",
+        lambda length=8: "freshpass",
+    )
+    monkeypatch.setenv("PC1_DEVICE_PASSWORD_FILE", str(password_file))
+    monkeypatch.setenv("PC1_DEVICE_MANAGED_FILE", str(managed_file))
+    monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
+    monkeypatch.setenv("USER", "pc1")
+
+    result = factory_reset_module.perform_factory_reset()
+
+    assert result["config_cleared"] is True
+    assert result["device_password_reset"] is True
+    assert result["wifi_cleared"] is True
+    assert result["reboot_requested"] is True
+    assert result["errors"] == []
+    assert password_file.read_text(encoding="utf-8").strip() == "freshpass"
+    assert calls[0][0] == ["sudo", "chpasswd"]
+    assert calls[0][1]["input"] == "pc1:freshpass\n"
+    assert calls[1][0] == ["sudo", "reboot"]
+
+
 def test_install_update_dependencies_recreates_missing_repo_venv(
     monkeypatch, tmp_path
 ):

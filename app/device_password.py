@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import secrets
 from pathlib import Path
 
 DEVICE_PASSWORD_ENV = "PC1_DEVICE_PASSWORD"
@@ -85,6 +86,15 @@ def _format_default_device_password(source_bytes: bytes) -> str:
     return "".join(
         alphabet[byte % len(alphabet)]
         for byte in source_bytes[:DEFAULT_DEVICE_PASSWORD_LENGTH]
+    )
+
+
+def generate_device_password(length: int = DEFAULT_DEVICE_PASSWORD_LENGTH) -> str:
+    """Generate a fresh user-facing Device Password."""
+    password_length = max(length, MIN_DEVICE_PASSWORD_LENGTH)
+    return "".join(
+        secrets.choice(DEFAULT_DEVICE_PASSWORD_ALPHABET)
+        for _ in range(password_length)
     )
 
 
@@ -192,3 +202,15 @@ def set_device_password(new_password: str) -> None:
             handle.write(f"{normalized}\n")
     except Exception as exc:
         raise RuntimeError(f"Failed to persist Device Password: {exc}") from exc
+
+
+def reset_device_password() -> str:
+    """Reset the managed Device Password and return the new password."""
+    if not can_change_device_password():
+        raise PermissionError(
+            "Device Password reset is only available on managed PC-1 devices"
+        )
+
+    new_password = generate_device_password()
+    set_device_password(new_password)
+    return new_password
