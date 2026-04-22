@@ -2790,6 +2790,9 @@ async def get_ssh_status():
         # Get current username
         username = _get_system_username()
 
+        # Get current IP address (useful as a fallback when mDNS is flaky)
+        ip_address = wifi_manager.get_wifi_status().get("ip")
+
         # Check if raspi-config SSH is enabled (if on Raspberry Pi)
         raspi_ssh_enabled = None
         if _is_raspberry_pi:
@@ -2810,6 +2813,7 @@ async def get_ssh_status():
             "active": service_active,
             "available": True,
             "username": username,
+            "ip_address": ip_address,
             "raspi_config_enabled": raspi_ssh_enabled,
         }
 

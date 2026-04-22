@@ -1079,6 +1079,11 @@ const GeneralSettings = ({
                     Connect via: <span className='text-black '>ssh {sshStatus.username || 'admin'}@pc-1.local</span>
                   </p>
                 )}
+                {sshStatus.enabled && sshStatus.ip_address && (
+                  <p className='text-xs text-gray-600 mt-1 '>
+                    IP address: <span className='text-black '>{sshStatus.ip_address}</span>
+                  </p>
+                )}
                 <p className='text-xs text-gray-600 mt-2 '>
                   Password: <span className='text-black '>Uses your Device Password</span>
                 </p>
