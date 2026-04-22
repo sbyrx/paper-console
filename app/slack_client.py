@@ -25,7 +25,7 @@ from app.config import TextConfig, settings
 from slack_bolt.app.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
-from app.modules import text, qrcode_print
+from app.modules import text
 from app.hardware import try_begin_print_job, clear_print_reservation
 
 from PIL import Image

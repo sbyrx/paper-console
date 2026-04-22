@@ -207,6 +207,7 @@ For production deployments, configure these environment variables:
 - **`PC1_LOG_LEVEL`**: Backend log level (default: `WARNING` on device builds).
 - **`UVICORN_LOG_LEVEL`**: Uvicorn log level for `run.sh` (default: `warning`).
 - **`UVICORN_ACCESS_LOG`**: Set to `1` to enable HTTP access logs (default: `0` for lower log volume).
+- **`SLACK_BOT_TOKEN`** and **`SLACK_APP_TOKEN`**: Set to enable the Slack integration (Optional; see instructions in `slack_client.py`)
 
 ### Production Release Artifacts
 
@@ -244,6 +245,7 @@ paper-console/
 │   ├── module_registry.py      # @register_module metadata and validation
 │   ├── selection_mode.py       # Dial-driven interactive selection flows
 │   ├── utils.py
+│   ├── slack_client.py         # (Optional) Slack integration
 │   ├── wifi_manager.py         # Setup AP and WiFi connection orchestration
 │   ├── data/                   # Bundled offline content and lookup datasets
 │   ├── drivers/
@@ -342,7 +344,9 @@ paper-console/
 
 **System Monitor:** Hostname, IP, WiFi, disk/memory bars, uptime, load, CPU temp (where available).
 
-**Word of the Day:** Merriam Webster's word of the day
+**Word of the Day:** Merriam Webster's word of the day.
+
+**Slack Integration:** Add PC-1 as a bot to your Slack workspace and send it text, images, and links to print.
 
 ---
 
