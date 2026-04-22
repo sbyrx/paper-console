@@ -1,7 +1,8 @@
 import requests
 import pytz
+import logging
 from datetime import datetime, timedelta, date
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from icalendar import Calendar
 from dateutil.rrule import rrulestr
 from app.drivers.printer_mock import PrinterDriver
@@ -12,16 +13,23 @@ from PIL import Image, ImageDraw
 import app.config  # Ensure app.config is imported for timezone access
 
 APP_CONFIG = app.config  # Alias to avoid confusion if needed
+logger = logging.getLogger(__name__)
+MAX_ICS_BYTES = 1024 * 1024
 
 
-def fetch_ics(url: str) -> str:
+def fetch_ics(url: str) -> Optional[str]:
     """Fetches the ICS file content from a URL."""
     try:
         response = requests.get(url, timeout=15)
         response.raise_for_status()
-        # Limit response size to prevent memory issues (1MB max for calendar)
-        return response.text[: 1024 * 1024]
-    except Exception:
+        # Limit response size to prevent memory issues.
+        text = response.text[:MAX_ICS_BYTES]
+        if not text.lstrip("\ufeff \t\r\n").upper().startswith("BEGIN:VCALENDAR"):
+            logger.warning("Calendar feed response was not an ICS calendar.")
+            return None
+        return text
+    except Exception as exc:
+        logger.warning("Calendar feed request failed: %s", type(exc).__name__)
         return None
 
 
@@ -559,10 +567,18 @@ def format_calendar_receipt(
     if config.mock_ics_content:
         calendar_payloads.append(config.mock_ics_content)
 
+    failed_sources = 0
     for url in sources:
         ics_data = fetch_ics(url)
         if ics_data:
             calendar_payloads.append(ics_data)
+        else:
+            failed_sources += 1
+
+    if sources and failed_sources == len(sources) and not calendar_payloads:
+        printer.print_body("Could not load calendar feed.")
+        printer.print_body("Check the iCal URL.")
+        return
 
     for ics_data in calendar_payloads:
         events = parse_events(

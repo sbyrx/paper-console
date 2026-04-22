@@ -12,7 +12,9 @@ from pathlib import Path
 
 import app.main as main_module
 import app.wifi_manager as wifi_manager
+from app.config import CalendarConfig
 from app.drivers.printer_serial import PrinterDriver
+from app.drivers.printer_mock import PrinterDriver as MockPrinterDriver
 from app.modules import email_client
 from app.modules import quotes as quotes_module
 from app.modules import news as news_module
@@ -606,6 +608,57 @@ def test_calendar_rrule_respects_exdate_in_window():
     assert start.date() in event_days
     assert skip.date() not in event_days
     assert (start + timedelta(days=2)).date() in event_days
+
+
+def test_calendar_config_accepts_ui_sources_without_label():
+    config = CalendarConfig(
+        ical_sources=[
+            {"url": "https://example.com/basic.ics"},
+            {"name": "Home", "url": "https://example.com/home.ics"},
+        ],
+        view_mode="month",
+    )
+
+    assert [source.url for source in config.ical_sources] == [
+        "https://example.com/basic.ics",
+        "https://example.com/home.ics",
+    ]
+    assert config.ical_sources[1].name == "Home"
+
+
+def test_fetch_ics_rejects_non_calendar_response(monkeypatch):
+    class DummyResponse:
+        text = "<html><title>Sign in</title></html>"
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(
+        calendar_module.requests,
+        "get",
+        lambda url, timeout=0: DummyResponse(),  # noqa: ARG005
+    )
+
+    assert calendar_module.fetch_ics("https://example.com/basic.ics") is None
+
+
+def test_calendar_receipt_reports_unloadable_feed(monkeypatch, capsys):
+    monkeypatch.setattr(calendar_module, "fetch_ics", lambda url: None)  # noqa: ARG005
+
+    printer = MockPrinterDriver()
+    calendar_module.format_calendar_receipt(
+        printer,
+        CalendarConfig(
+            ical_sources=[{"url": "https://example.com/basic.ics"}],
+            view_mode="month",
+        ),
+        "Calendar",
+    )
+
+    output = capsys.readouterr().out
+    assert "Could not load calendar feed." in output
+    assert "Check the iCal URL." in output
+    assert "No upcoming events." not in output
 
 
 def test_factory_reset_reports_reboot_failure(monkeypatch):

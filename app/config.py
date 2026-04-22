@@ -91,13 +91,14 @@ class WeatherConfig(BaseModel):
 
 class CalendarSource(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    label: str
-    url: str
+    label: Optional[str] = None
+    name: Optional[str] = None
+    url: str = ""
 
 
 class CalendarConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    ical_sources: List[CalendarSource] = []
+    ical_sources: List[CalendarSource] = Field(default_factory=list)
     view_mode: Optional[Literal["day", "week", "month"]] = None
     days_to_show: Optional[int] = None  # Legacy fallback for older saved configs.
     mock_ics_content: Optional[str] = None
