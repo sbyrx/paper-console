@@ -37,7 +37,94 @@ def test_snapshot_defaults_fill_blank_modules():
     assert history_config["reference_date"] == render_all_prints.SNAPSHOT_HISTORY_DATE
     assert render_all_prints.text._doc_has_visible_content(text_config["content_doc"])
     assert "BEGIN:VCALENDAR" in calendar_config["mock_ics_content"]
+    assert calendar_config["view_mode"] == "month"
     assert email_config["mock_messages"][0]["subject"] == "Hi Grandma"
+
+
+def test_calendar_view_mode_snapshots_force_day_and_week(monkeypatch, tmp_path):
+    render_all_prints = _load_render_all_prints_module()
+    captured = []
+
+    def _fake_execute_module(module, printer, include_interactive):  # noqa: ARG001
+        captured.append(
+            (
+                module.name,
+                module.config["view_mode"],
+                module.config["ical_sources"],
+                module.config["mock_ics_content"],
+            )
+        )
+        printer.captured_bitmaps.append(Image.new("1", (8, 8), 1))
+        return True
+
+    monkeypatch.setattr(render_all_prints, "_execute_module", _fake_execute_module)
+
+    for view_mode in render_all_prints.ADDITIONAL_CALENDAR_VIEW_MODE_SNAPSHOTS:
+        saved = render_all_prints._render_calendar_view_mode_snapshot(
+            view_mode=view_mode,
+            out_dir=tmp_path,
+            include_interactive=True,
+            max_lines=200,
+        )
+        assert saved.name == f"module_type_calendar_{view_mode}.png"
+
+    assert [(item[0], item[1], item[2]) for item in captured] == [
+        ("Calendar (Day)", "day", []),
+        ("Calendar (Week)", "week", []),
+    ]
+    assert all("BEGIN:VCALENDAR" in item[3] for item in captured)
+
+
+def test_calendar_day_view_prints_agenda_list():
+    today = date.today()
+    captured = []
+
+    class FakePrinter:
+        width = 42
+
+        def print_subheader(self, text):
+            captured.append(("subheader", text))
+
+        def print_bold(self, text):
+            captured.append(("bold", text))
+
+        def print_body(self, text):
+            captured.append(("body", text))
+
+        def feed(self, lines):  # noqa: ARG002
+            captured.append(("feed", lines))
+
+    events = {
+        today: [
+            {
+                "time": "All Day",
+                "summary": "Library pickup day",
+                "sort_key": "00:00",
+                "datetime": None,
+                "is_all_day": True,
+            },
+            {
+                "time": "9:30 AM",
+                "summary": "Mock calendar event",
+                "sort_key": "09:30",
+                "datetime": None,
+                "is_all_day": False,
+            }
+        ]
+    }
+
+    calendar_module._print_calendar_day_view(
+        FakePrinter(),
+        [today],
+        events,
+    )
+
+    assert captured[0][0] == "subheader"
+    assert captured[0][1].startswith("TODAY")
+    assert ("bold", "All Day") in captured
+    assert ("body", "  Library pickup day") in captured
+    assert ("bold", "9:30 AM") in captured
+    assert ("body", "  Mock calendar event") in captured
 
 
 def test_snapshot_email_defaults_override_live_credentials_with_mock():

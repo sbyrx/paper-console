@@ -1,6 +1,7 @@
 import requests
 import pytz
 import logging
+import textwrap
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Any, Optional
 from icalendar import Calendar
@@ -232,8 +233,8 @@ def parse_events(
     return events_by_day
 
 
-def _print_calendar_timeline_view(printer, sorted_dates, all_events):
-    """Detailed timeline view for 1 day - shows full day with hour markers and event bars."""
+def _print_calendar_day_view(printer, sorted_dates, all_events):
+    """Agenda list for 1 day."""
     if not sorted_dates:
         return
     
@@ -247,30 +248,45 @@ def _print_calendar_timeline_view(printer, sorted_dates, all_events):
         day_name = "TODAY"
     
     printer.print_subheader(f"{day_name} ({d.strftime('%m/%d')})")
-    
-    # Print timeline visualization
-    # Print timeline visualization
-    width = printer.width
-    font = getattr(printer, "_get_font", lambda s: None)("regular")
-    font_sm = getattr(printer, "_get_font", lambda s: None)("regular_sm")
-    
-    # Generate image
-    img = draw_calendar_day_timeline_image(
-        width - 20, 120, d, events, False, font, font_sm
-    )
-    printer.print_image(img)
     printer.feed(1)
+
+    for i, event in enumerate(events):
+        time_label = "All Day" if event.get("is_all_day") else event.get("time", "")
+        summary = str(event.get("summary", "")).strip() or "Untitled event"
+
+        printer.print_bold(time_label)
+        for line in textwrap.wrap(summary, width=max(12, printer.width - 2)):
+            printer.print_body(f"  {line}")
+
+        if i < len(events) - 1:
+            printer.feed(1)
+
+    printer.feed(1)
+
+
+def _calendar_image_content_width(printer) -> int:
+    """Return printable bitmap width in dots, not text characters."""
+    get_content_width = getattr(printer, "_get_content_width", None)
+    if callable(get_content_width):
+        try:
+            content_width = int(get_content_width())
+            if content_width > 0:
+                return content_width
+        except Exception:
+            pass
+
+    dots_width = getattr(printer, "PRINTER_WIDTH_DOTS", None)
+    if isinstance(dots_width, int) and dots_width > 0:
+        return max(1, dots_width - 8)
+
+    chars_width = getattr(printer, "width", 42)
+    return max(200, int(chars_width * 9))
 
 
 def _calendar_grid_cell_size(printer) -> int:
     """Choose a cell size that fills most of the printer width."""
-    dots_width = getattr(printer, "PRINTER_WIDTH_DOTS", None)
-    if not isinstance(dots_width, int) or dots_width <= 0:
-        chars_width = getattr(printer, "width", 42)
-        dots_width = max(200, int(chars_width * 9))
-
     # Leave a small margin so print_image does not downscale.
-    target_width = max(140, dots_width - 8)
+    target_width = max(140, _calendar_image_content_width(printer))
     cell_size = (target_width - 4) // 7
     return max(14, min(56, cell_size))
 
@@ -597,7 +613,7 @@ def format_calendar_receipt(
 
     # Use different visualizations by explicit view mode.
     if view_mode == "day":
-        _print_calendar_timeline_view(printer, sorted_dates, all_events)
+        _print_calendar_day_view(printer, sorted_dates, all_events)
     elif view_mode == "month":
         _print_calendar_month_view(printer, sorted_dates, all_events)
     else:
@@ -751,174 +767,4 @@ def draw_calendar_grid_image(
                     draw.point((px, cell_y + 2), fill=0)
                     draw.point((px, cell_y + cell_size - 3), fill=0)
 
-    return img
-
-
-def draw_calendar_day_timeline_image(
-    width: int,
-    height: int,
-    day: date,
-    events: list,
-    compact: bool,
-    font,
-    font_sm,
-) -> Image.Image:
-    """Draw a timeline visualization for a single calendar day to an image."""
-    from datetime import datetime, time as dt_time
-    import pytz
-
-    # Create image
-    img = Image.new("1", (width, height), 1)  # White background
-    draw = ImageDraw.Draw(img)
-    x, y = 0, 0
-
-    # Timeline area
-    timeline_x = x + 10
-    timeline_y = y + 20
-    timeline_width = width - 20
-    timeline_height = height - 60 if not compact else height - 40
-
-    # Get timezone
-    try:
-        tz = pytz.timezone(APP_CONFIG.settings.timezone)
-    except:
-        tz = pytz.UTC
-
-    # Current time
-    now = datetime.now(tz)
-    today = now.date()
-    is_today = day == today
-
-    # Draw timeline axis (horizontal line)
-    axis_y = timeline_y + timeline_height // 2
-    draw.line(
-        [(timeline_x, axis_y), (timeline_x + timeline_width, axis_y)],
-        fill=0,
-        width=2,
-    )
-
-    # Draw hour markers
-    if not compact:
-        for hour in [0, 6, 12, 18, 24]:
-            display_hour = 0 if hour == 24 else hour
-            marker_x = timeline_x + int((hour / 24) * timeline_width)
-            # Draw tick mark
-            draw.line(
-                [(marker_x, axis_y - 5), (marker_x, axis_y + 5)],
-                fill=0,
-                width=1,
-            )
-            # Draw hour label
-            if font_sm:
-                hour_str = f"{display_hour:02d}:00"
-                bbox = font_sm.getbbox(hour_str)
-                text_w = bbox[2] - bbox[0] if bbox else 20
-                draw.text(
-                    (marker_x - text_w // 2, axis_y + 8),
-                    hour_str,
-                    font=font_sm,
-                    fill=0,
-                )
-
-    # Draw current time indicator (if today)
-    if is_today and not compact:
-        current_hour = now.hour
-        current_minute = now.minute
-        current_pos = (current_hour * 60 + current_minute) / (24 * 60)
-        current_x = timeline_x + int(current_pos * timeline_width)
-        # Draw vertical line
-        draw.line(
-            [(current_x, timeline_y), (current_x, timeline_y + timeline_height)],
-            fill=0,
-            width=1,
-        )
-        # Draw triangle indicator
-        triangle_size = 4
-        draw.polygon(
-            [
-                (current_x, timeline_y),
-                (current_x - triangle_size, timeline_y + triangle_size),
-                (current_x + triangle_size, timeline_y + triangle_size),
-            ],
-            fill=0,
-        )
-
-    # Draw events
-    event_y_offset = 0
-    for event in events:
-        time_str = event.get("time", "")
-        summary = event.get("summary", "")
-        event_dt = event.get("datetime")
-        is_all_day = event.get("is_all_day", False)
-
-        if is_all_day:
-            # All-day event: draw full-width bar at top
-            bar_y = timeline_y + event_y_offset
-            bar_height = 12
-            draw.rectangle(
-                [
-                    (timeline_x, bar_y),
-                    (timeline_x + timeline_width, bar_y + bar_height),
-                ],
-                outline=0,
-                width=1,
-                fill=0,
-            )
-            # Draw text
-            if font_sm:
-                draw.text(
-                    (timeline_x + 4, bar_y + 2),
-                    f"All Day: {summary[:30]}",
-                    font=font_sm,
-                    fill=1,  # White text on black background
-                )
-            event_y_offset += bar_height + 4
-        elif event_dt and not compact:
-            # Timed event: position by time
-            event_hour = event_dt.hour
-            event_minute = event_dt.minute
-            event_pos = (event_hour * 60 + event_minute) / (24 * 60)
-            event_x = timeline_x + int(event_pos * timeline_width)
-
-            # Draw event marker (circle)
-            marker_radius = 4
-            marker_y = axis_y
-            draw.ellipse(
-                [
-                    event_x - marker_radius,
-                    marker_y - marker_radius,
-                    event_x + marker_radius,
-                    marker_y + marker_radius,
-                ],
-                fill=0,
-            )
-
-            # Draw event text above or below timeline
-            text_y = (
-                marker_y - 20
-                if marker_y > timeline_y + timeline_height // 2
-                else marker_y + 12
-            )
-            if font_sm:
-                # Truncate summary
-                max_text_width = timeline_width // 3
-                if len(summary) > max_text_width // 6:
-                    summary = summary[: max_text_width // 6 - 3] + "..."
-                draw.text((event_x + 6, text_y), summary, font=font_sm, fill=0)
-                # Draw time below
-                draw.text(
-                    (event_x + 6, text_y + 12), time_str, font=font_sm, fill=0
-                )
-        else:
-            # Compact mode: just list events
-            if font:
-                text = f"{time_str:<8}{summary[:30]}"
-                draw.text(
-                    (timeline_x, timeline_y + event_y_offset),
-                    text,
-                    font=font,
-                    fill=0,
-                )
-                event_y_offset += 18
-    
     return img

@@ -39,6 +39,7 @@ from app.drivers.printer_serial import PrinterDriver as SerialPrinterDriver
 from app.modules import webhook, text, calendar, email_client
 
 SNAPSHOT_HISTORY_DATE = "1969-07-20"
+ADDITIONAL_CALENDAR_VIEW_MODE_SNAPSHOTS = ("day", "week")
 SNAPSHOT_NOTE_DOC = {
     "type": "doc",
     "content": [
@@ -512,6 +513,37 @@ def _render_module_type(
     return _save_single_bitmap(printer, final_out)
 
 
+def _render_calendar_view_mode_snapshot(
+    view_mode: str,
+    out_dir: Path,
+    include_interactive: bool,
+    max_lines: int,
+) -> Path:
+    selection_mode.exit_selection_mode()
+    module_defs = get_all_modules()
+    defn = module_defs["calendar"]
+    config = {
+        "ical_sources": [],
+        "mock_ics_content": _build_snapshot_calendar_ics(),
+        "view_mode": view_mode,
+    }
+    module = SimpleNamespace(
+        id=f"type-calendar-{view_mode}",
+        type="calendar",
+        name=f"{defn.label} ({view_mode.title()})",
+        config=config,
+    )
+
+    printer = CapturePrinter(width=PRINTER_WIDTH)
+    printer.reset_buffer(max_lines=max_lines)
+    _execute_module(module, printer, include_interactive=include_interactive)
+    printer.flush_buffer()
+    return _save_single_bitmap(
+        printer,
+        out_dir / f"module_type_calendar_{view_mode}.png",
+    )
+
+
 def _render_setup_instructions(out_dir: Path, out_path: Optional[Path] = None) -> Path:
     selection_mode.exit_selection_mode()
     import app.utils as utils
@@ -774,6 +806,24 @@ def main() -> int:
             msg = f"module-type:{type_id} failed: {exc}"
             failures.append(msg)
             print(f"[warn] {msg}", file=sys.stderr)
+
+    # Calendar has distinct print layouts by view mode; add day/week variants so
+    # the gallery shows those layouts alongside the normal calendar snapshot.
+    if "calendar" in module_defs:
+        for view_mode in ADDITIONAL_CALENDAR_VIEW_MODE_SNAPSHOTS:
+            try:
+                generated.append(
+                    _render_calendar_view_mode_snapshot(
+                        view_mode=view_mode,
+                        out_dir=out_dir,
+                        include_interactive=include_interactive,
+                        max_lines=args.max_lines,
+                    )
+                )
+            except Exception as exc:
+                msg = f"module-type:calendar:{view_mode} failed: {exc}"
+                failures.append(msg)
+                print(f"[warn] {msg}", file=sys.stderr)
 
     # System prints
     for renderer in (_render_setup_instructions, _render_first_boot, _render_system_ready):
