@@ -26,6 +26,7 @@ pnpm-debug.log*
 # Build outputs
 # web/dist/
 web/dist-ssr/
+release-artifacts/
 *.local
 
 # Configuration & Secrets
