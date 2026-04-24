@@ -13,6 +13,10 @@ im:history, reactions:write, users:read, files:read
 4. In your Slack app settings, under Features -> Event Subscriptions -> Subscribe to bot events add a subscription
 to message.im events
 
+5. Under Features -> Slash Commands, create two new commands:
+- /channels - no parameters, will return a list of channels and their assigned modules
+- /channel [channel number] - will trigger a print of the specified channel (e.g. /channel 1)
+
 Any messages sent to your bot (including images and links) will now be printed!
 """
 from io import BytesIO
@@ -150,8 +154,13 @@ async def print_channel(ack, respond, command):
 
     channel_num = int(channel_num)
     channel = settings.channels.get(channel_num)
+    
     if not channel or not channel.modules:
         await respond(f"Channel {channel_num} is empty")
+        return
+    
+    if not try_begin_print_job(debounce=False):
+        await respond(f"🖨️ Cannot print channel {channel_num} right now: printer is busy.")
         return
     
     await respond(f"🖨️ Triggering print for channel {channel_num}...")
