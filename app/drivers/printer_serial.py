@@ -1069,7 +1069,7 @@ class PrinterDriver:
                 command[8 + i] = byte ^ 0xFF  # Invert bits
 
             # Send entire image in chunks to prevent buffer overflow
-            print(f"[DEBUG] Sending bitmap: {width}x{height} ({len(command)} bytes)")
+            logger.debug("Sending bitmap: %dx%d (%d bytes)", width, height, len(command))
             CHUNK_SIZE = 4096
             total_sent = 0
             for i in range(0, len(command), CHUNK_SIZE):
@@ -1078,7 +1078,7 @@ class PrinterDriver:
                 total_sent += len(chunk)
                 # Small yield to let hardware buffer drain slightly
                 time.sleep(0.01)
-            print(f"[DEBUG] Bitmap send complete. Total bytes: {total_sent}")
+            logger.debug("Bitmap send complete. Total bytes: %d", total_sent)
 
 
         except Exception:
@@ -1096,7 +1096,7 @@ class PrinterDriver:
                 # until all bytes transmit (slow at 9600 baud)
                 self.ser.write(data)
         except Exception as e:
-            print(f"[ERROR] Serial write failed: {e}")
+            logger.exception("Serial write failed")
 
     def _read(self, size: int = 1, timeout: float = 1.0) -> bytes:
         """Read bytes from serial interface. Returns empty bytes on error."""
@@ -1444,10 +1444,10 @@ class PrinterDriver:
         rotated 180°, and sent as one raster graphics command.
         """
         if not self.print_buffer:
-            print("[DEBUG] Flush called on empty buffer.")
+            logger.debug("Flush called on empty buffer.")
             return
 
-        print(f"[DEBUG] Flushing buffer with {len(self.print_buffer)} ops...")
+        logger.debug("Flushing buffer with %d ops...", len(self.print_buffer))
 
 
         # If max_lines is set, trim content from END of buffer
@@ -1484,14 +1484,14 @@ class PrinterDriver:
 
         img = self._render_unified_bitmap(ops)
         if img:
-            print(f"[DEBUG] Rendered unified bitmap: {img.size}")
+            logger.debug("Rendered unified bitmap: %s", img.size)
             self._send_bitmap(img)
             # Ensure all data is transmitted before returning
             if self.ser and self.ser.is_open:
                 try:
                     self.ser.flush()
-                except Exception as e:
-                    print(f"[ERROR] Serial flush failed: {e}")
+                except Exception:
+                    logger.exception("Serial flush failed")
             # Explicit post-print feed for cutter clearance.
             # Use feed_direct() because it sends both ESC d and ESC J variants
             # for better compatibility across printer firmwares.
@@ -1499,10 +1499,10 @@ class PrinterDriver:
             if feed_lines > 0:
                 try:
                     self.feed_direct(feed_lines)
-                except Exception as e:
-                    print(f"[ERROR] Post-print feed failed: {e}")
+                except Exception:
+                    logger.exception("Post-print feed failed")
         else:
-            print("[DEBUG] No bitmap rendered from ops.")
+            logger.debug("No bitmap rendered from ops.")
 
 
     def reset_buffer(self, max_lines: int = 0):
