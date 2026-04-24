@@ -33,6 +33,7 @@ INCLUDE_PATHS = [
     "app",
     "icons",
     "scripts",
+    "testing",
     "web/dist",
     "requirements.txt",
     "requirements-dev.txt",
@@ -40,10 +41,11 @@ INCLUDE_PATHS = [
     "run.sh",
     "AGENTS.md",
     "readme.md",
+    ".env.example",
 ]
 
 # Exclusions within included directories.
-EXCLUDED_DIRS = {".git", ".github", "__pycache__", ".pytest_cache", ".mypy_cache", ".venv"}
+EXCLUDED_DIRS = {".git", ".github", "__pycache__", ".pytest_cache", ".mypy_cache", ".venv", "artifacts"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
 REQUIRED_RUNTIME_PATHS = [
     "app/data/quotes.json",

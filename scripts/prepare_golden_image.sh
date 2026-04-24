@@ -70,6 +70,7 @@ confirm_or_exit() {
     echo "This will scrub this device for golden image capture:"
     echo "- reset config.json and config.json.bak to defaults"
     echo "- remove .env and local runtime markers"
+    echo "- remove dev-only files (.claude, .github, .gitignore, images, etc.)"
     echo "- clear WiFi profiles, logs, and shell histories"
     echo "- disable SSH and remove SSH host keys"
     echo "- clear machine identity (/etc/machine-id)"
@@ -185,6 +186,17 @@ run_as_root rm -f \
     "$PROJECT_DIR/.deploy_config" \
     "/etc/pc1/device_password" \
     "/etc/pc1/device_managed"
+
+log "Removing dev-only files from project tree"
+run_as_root rm -rf \
+    "$PROJECT_DIR/.claude" \
+    "$PROJECT_DIR/.codex" \
+    "$PROJECT_DIR/.cursorrules" \
+    "$PROJECT_DIR/.github" \
+    "$PROJECT_DIR/.gitattributes" \
+    "$PROJECT_DIR/.gitignore" \
+    "$PROJECT_DIR/.deploy_config.example" \
+    "$PROJECT_DIR/images"
 
 log "Clearing cached artifacts and Python bytecode"
 run_as_root find "$PROJECT_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
