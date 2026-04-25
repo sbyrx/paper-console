@@ -21,12 +21,6 @@ except Exception:  # pragma: no cover - non-Pi environments
     GPIOHANDLE_REQUEST_INPUT = 0
 
 logger = logging.getLogger(__name__)
-PRINT_TRACE_ENABLED = True
-
-
-def _trace_printer(message: str, *args):
-    if PRINT_TRACE_ENABLED:
-        logger.warning("[PRINTER_TRACE] " + message, *args)
 
 
 class PrinterDriver:
@@ -1202,7 +1196,6 @@ class PrinterDriver:
             return
 
         deadline = time.time() + max(timeout, quiet_period)
-        start = time.time()
         busy_pin_seen = False
         busy_seen = False
 
@@ -1211,7 +1204,6 @@ class PrinterDriver:
 
         busy_pin_level = self._read_busy_pin()
         if busy_pin_level is not None:
-            _trace_printer("wait_for_idle start source=gpio initial_level=%s", busy_pin_level)
             while time.time() < deadline:
                 busy_pin_level = self._read_busy_pin()
                 if busy_pin_level == 1:
@@ -1220,25 +1212,12 @@ class PrinterDriver:
                     continue
                 if busy_pin_seen:
                     time.sleep(quiet_period)
-                    _trace_printer(
-                        "wait_for_idle done source=gpio duration=%.3f busy_seen=%s final_level=%s",
-                        time.time() - start,
-                        busy_pin_seen,
-                        busy_pin_level,
-                    )
                     return
                 remaining = deadline - time.time()
                 if remaining > 0:
                     time.sleep(min(quiet_period, remaining))
-                _trace_printer(
-                    "wait_for_idle done source=gpio duration=%.3f busy_seen=%s final_level=%s",
-                    time.time() - start,
-                    busy_pin_seen,
-                    busy_pin_level,
-                )
                 return
 
-        _trace_printer("wait_for_idle start source=status")
         while time.time() < deadline:
             busy = self.is_printer_busy()
             if busy:
@@ -1251,14 +1230,7 @@ class PrinterDriver:
                 remaining = deadline - time.time()
                 if remaining > 0:
                     time.sleep(min(quiet_period, remaining))
-            _trace_printer(
-                "wait_for_idle done source=status duration=%.3f busy_seen=%s",
-                time.time() - start,
-                busy_seen,
-            )
             return
-
-        _trace_printer("wait_for_idle timeout duration=%.3f", time.time() - start)
 
     def close(self):
         if self._busy_handle:

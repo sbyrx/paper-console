@@ -38,12 +38,6 @@ for noisy_logger in ("uvicorn.access", "httpx", "urllib3", "asyncio"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
-PRINT_TRACE_ENABLED = True
-
-
-def _trace_print_flow(message: str, *args):
-    if PRINT_TRACE_ENABLED:
-        logger.warning("[PRINT_TRACE] " + message, *args)
 
 SEMVER_TAG_RE = re.compile(
     r"^v(?P<major>0|[1-9]\d*)\."
@@ -326,31 +320,13 @@ def _try_begin_print_job(*, debounce: bool = False) -> bool:
         _expire_stale_hold_action_locked(current_time)
 
         if _printer_reserved_locked():
-            _trace_print_flow(
-                "reject begin_print debounce=%s reason=reserved print_in_progress=%s hold_action_in_progress=%s",
-                debounce,
-                print_in_progress,
-                hold_action_in_progress,
-            )
             return False
 
         if debounce and (current_time - last_print_time) < PRINT_DEBOUNCE_SECONDS:
-            _trace_print_flow(
-                "reject begin_print debounce=%s reason=debounce seconds_since_last=%.3f threshold=%.3f",
-                debounce,
-                current_time - last_print_time,
-                PRINT_DEBOUNCE_SECONDS,
-            )
             return False
 
         print_in_progress = True
         last_print_time = current_time
-        _trace_print_flow(
-            "accept begin_print debounce=%s print_in_progress=%s hold_action_in_progress=%s",
-            debounce,
-            print_in_progress,
-            hold_action_in_progress,
-        )
         return True
 
 
@@ -364,13 +340,11 @@ def _reserve_hold_action() -> bool:
         _expire_stale_hold_action_locked(current_time)
 
         if print_in_progress:
-            _trace_print_flow("reject reserve_hold reason=print_in_progress")
             return False
 
         hold_action_in_progress = True
         hold_action_started_at = current_time
         last_print_time = current_time
-        _trace_print_flow("reserve_hold accepted")
         return True
 
 
@@ -384,14 +358,12 @@ def _promote_hold_to_print_job() -> bool:
         _expire_stale_hold_action_locked(current_time)
 
         if print_in_progress:
-            _trace_print_flow("reject promote_hold reason=print_in_progress")
             return False
 
         hold_action_in_progress = False
         hold_action_started_at = 0.0
         print_in_progress = True
         last_print_time = current_time
-        _trace_print_flow("promote_hold accepted")
         return True
 
 
@@ -409,19 +381,11 @@ def _clear_print_reservation(*, clear_hold: bool = True):
             hold_action_in_progress = False
             hold_action_started_at = 0.0
 
-    drained = None
     if hasattr(button, "drain_pending_events"):
         try:
-            drained = button.drain_pending_events()
+            button.drain_pending_events()
         except Exception:
             logger.debug("Failed to drain button events after print completion", exc_info=True)
-    _trace_print_flow(
-        "clear_reservation clear_hold=%s drained=%s print_in_progress=%s hold_action_in_progress=%s",
-        clear_hold,
-        drained,
-        print_in_progress,
-        hold_action_in_progress,
-    )
 
 
 def on_button_press_threadsafe():
@@ -429,9 +393,7 @@ def on_button_press_threadsafe():
     global global_loop
 
     if not _try_begin_print_job(debounce=True):
-        _trace_print_flow("button_press ignored")
         return
-    _trace_print_flow("button_press accepted selection_mode_pending_check")
 
     try:
         if global_loop and global_loop.is_running():
@@ -441,13 +403,11 @@ def on_button_press_threadsafe():
             if is_selection_mode_active():
                 # In selection mode: use dial position as choice input
                 position = dial.read_position()
-                _trace_print_flow("button_press routed_to_selection dial_position=%s", position)
                 asyncio.run_coroutine_threadsafe(
                     handle_selection_async(position), global_loop
                 )
             else:
                 # Normal mode: trigger the current channel
-                _trace_print_flow("button_press routed_to_channel_trigger dial_position=%s", dial.read_position())
                 asyncio.run_coroutine_threadsafe(trigger_current_channel(), global_loop)
         else:
             # Loop not running, reset flag
@@ -485,9 +445,7 @@ def on_button_long_press_threadsafe():
     global global_loop
 
     if not _promote_hold_to_print_job() and not _try_begin_print_job(debounce=False):
-        _trace_print_flow("long_press ignored")
         return
-    _trace_print_flow("long_press accepted")
 
     try:
         if global_loop and global_loop.is_running():
@@ -502,7 +460,6 @@ def on_button_long_press_ready_threadsafe():
     """Callback fired at 5s hold threshold to signal 'you can release now'."""
     try:
         _reserve_hold_action()
-        _trace_print_flow("long_press_ready threshold_reached")
         # Half-line tactile feed cue.
         if hasattr(printer, "feed_dots"):
             printer.feed_dots(12)
@@ -657,7 +614,6 @@ async def long_press_menu_trigger():
     exit_selection_mode()
 
     position = dial.read_position()
-    _trace_print_flow("quick_actions start dial_position=%s", position)
 
     def _initial_print():
         # Print quick actions menu only (no auto-TOC print).
@@ -733,10 +689,8 @@ async def long_press_menu_trigger():
 
     quick_actions_id = f"quick-actions-{position}"
     if hasattr(button, "drain_pending_events"):
-        drained = button.drain_pending_events()
-        _trace_print_flow("quick_actions drained_before_enter count=%s", drained)
+        button.drain_pending_events()
     enter_selection_mode(_handle_quick_action, quick_actions_id)
-    _trace_print_flow("quick_actions entered_selection_mode module_id=%s", quick_actions_id)
     # Release lock only after quick-actions selection mode is fully active.
     _clear_print_reservation(clear_hold=False)
 
@@ -4023,7 +3977,6 @@ async def trigger_channel(position: int):
 
     # Cancel any active interactive mode when a new channel is triggered
     exit_selection_mode()
-    _trace_print_flow("trigger_channel start position=%s", position)
 
     def _do_print():
         """Synchronous function that does the actual printing work."""
@@ -4204,7 +4157,6 @@ async def trigger_channel(position: int):
         with ThreadPoolExecutor() as executor:
             await loop.run_in_executor(executor, _do_print)
     finally:
-        _trace_print_flow("trigger_channel finish position=%s", position)
         # Always mark print as complete (thread-safe)
         _clear_print_reservation(clear_hold=False)
 
@@ -4293,7 +4245,6 @@ async def print_module_direct(module_id: str):
 
     # Cancel any active interactive mode
     exit_selection_mode()
-    _trace_print_flow("print_module_direct start module_id=%s", module_id)
 
     def _do_print():
         """Synchronous function that does the actual printing work."""
@@ -4325,7 +4276,6 @@ async def print_module_direct(module_id: str):
         with ThreadPoolExecutor() as executor:
             await loop.run_in_executor(executor, _do_print)
     finally:
-        _trace_print_flow("print_module_direct finish module_id=%s", module_id)
         # Always mark print as complete (thread-safe)
         _clear_print_reservation(clear_hold=False)
 
