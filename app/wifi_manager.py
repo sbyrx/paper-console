@@ -256,6 +256,21 @@ def connect_to_wifi(ssid: str, password: Optional[str] = None) -> bool:
             check=False,
         )
 
+        # Disable WiFi power saving on this profile so newly-configured
+        # networks don't drop off the LAN after idle. NM values: 2 = disable.
+        run_command(
+            [
+                "sudo",
+                "nmcli",
+                "connection",
+                "modify",
+                ssid,
+                "802-11-wireless.powersave",
+                "2",
+            ],
+            check=False,
+        )
+
         # Activate the connection
         result = run_command(["sudo", "nmcli", "connection", "up", ssid], check=False)
         return result.returncode == 0

@@ -41,6 +41,29 @@ def test_connect_to_wifi_returns_false_when_profile_creation_fails(monkeypatch):
     assert wifi_manager.connect_to_wifi("TestSSID", "password123") is False
 
 
+def test_connect_to_wifi_disables_powersave_on_new_profile(monkeypatch):
+    invocations = []
+
+    def fake_run_command(cmd, check=False):  # noqa: ARG001
+        invocations.append(list(cmd))
+        return _completed(returncode=0)
+
+    monkeypatch.setattr(wifi_manager, "run_command", fake_run_command)
+
+    assert wifi_manager.connect_to_wifi("TestSSID", "password123") is True
+
+    powersave_modifies = [
+        cmd
+        for cmd in invocations
+        if cmd[:4] == ["sudo", "nmcli", "connection", "modify"]
+        and "802-11-wireless.powersave" in cmd
+    ]
+    assert len(powersave_modifies) == 1
+    cmd = powersave_modifies[0]
+    assert "TestSSID" in cmd
+    assert cmd[cmd.index("802-11-wireless.powersave") + 1] == "2"
+
+
 def test_start_ap_mode_retries_then_succeeds(monkeypatch):
     start_attempts = {"count": 0}
 
