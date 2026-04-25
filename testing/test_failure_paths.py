@@ -781,6 +781,11 @@ def test_scheduler_loop_skips_trigger_when_hold_reserved(monkeypatch):
     )
     monkeypatch.setattr(main_module, "print_in_progress", False)
     monkeypatch.setattr(main_module, "hold_action_in_progress", True)
+    monkeypatch.setattr(
+        main_module,
+        "hold_action_started_at",
+        time.time(),
+    )
 
     try:
         asyncio.run(main_module.scheduler_loop())
@@ -1018,6 +1023,7 @@ def test_factory_reset_resets_managed_device_password(monkeypatch, tmp_path: Pat
     monkeypatch.setenv("PC1_DEVICE_MANAGED_FILE", str(managed_file))
     monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
     monkeypatch.setenv("USER", "pc1")
+    monkeypatch.setattr(factory_reset_module.platform, "system", lambda: "Linux")
 
     result = factory_reset_module.perform_factory_reset()
 
