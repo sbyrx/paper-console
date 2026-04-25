@@ -47,6 +47,9 @@ const GeneralSettings = ({
   const [sshLoading, setSshLoading] = useState(false);
   const [sshMessage, setSshMessage] = useState({ type: '', message: '' });
 
+  // Reboot state
+  const [rebootingDevice, setRebootingDevice] = useState(false);
+
   // Update check state
   const [updateStatus, setUpdateStatus] = useState(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -198,6 +201,41 @@ const GeneralSettings = ({
 
       checkService();
     }, 5000);
+  };
+
+  const handleDeviceReboot = async () => {
+    if (!confirm('Reboot the device now? It will be offline for about 30–60 seconds.')) return;
+
+    setRebootingDevice(true);
+    try {
+      await adminAuthFetch('/api/system/reboot', { method: 'POST' });
+    } catch {
+      // Network error is expected as the device shuts down
+    }
+
+    // Wait for device to go offline, then poll until it comes back
+    setTimeout(() => {
+      const maxTimeout = setTimeout(() => window.location.reload(), 120000);
+
+      const poll = async () => {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 2000);
+        try {
+          const res = await fetch('/api/health', { signal: controller.signal });
+          clearTimeout(tid);
+          if (res.ok) {
+            clearTimeout(maxTimeout);
+            window.location.reload();
+            return;
+          }
+        } catch {
+          clearTimeout(tid);
+        }
+        setTimeout(poll, 2000);
+      };
+
+      poll();
+    }, 15000);
   };
 
   const runRestartingUpdateAction = async ({
@@ -925,6 +963,18 @@ const GeneralSettings = ({
             <p className='text-xs text-gray-600 mt-1 '>
               Maximum lines per print job to prevent endless prints. Set to 0 for no limit (default: 200)
             </p>
+          </div>
+
+          <div className='mt-4 pt-4 border-t border-gray-200'>
+            <label className={labelClass}>Reboot Device</label>
+            <p className='text-sm text-gray-600 mb-3'>
+              Restart the device to clear any stuck or unexpected state. It will be offline for about 30–60 seconds.
+            </p>
+            {rebootingDevice ? (
+              <div className='text-sm text-gray-600 font-medium'>Rebooting… page will reload when the device comes back online.</div>
+            ) : (
+              <PrimaryButton onClick={handleDeviceReboot}>Reboot Device</PrimaryButton>
+            )}
           </div>
         </div>
       </div>

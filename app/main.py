@@ -3267,6 +3267,28 @@ async def change_device_password(
         }
 
 
+@app.post("/api/system/reboot", dependencies=[Depends(require_admin_access)])
+async def reboot_device(background_tasks: BackgroundTasks):
+    """Reboot the device to clear any stuck or unexpected hardware/software state."""
+    if platform.system() != "Linux":
+        return {"success": False, "message": "Reboot is only supported on Linux"}
+
+    def _do_reboot():
+        try:
+            subprocess.run(
+                ["sudo", "reboot"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except Exception:
+            logger.exception("Reboot command failed")
+
+    background_tasks.add_task(_do_reboot)
+    return {"success": True, "message": "Device is rebooting"}
+
+
 # --- LOCATION SEARCH API ---
 
 
