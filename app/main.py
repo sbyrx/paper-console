@@ -1196,6 +1196,12 @@ async def lifespan(app: FastAPI):
             "Printer driver is unavailable at startup; hardware printing may fail until serial is restored."
         )
 
+    if platform.system() == "Linux":
+        try:
+            _repair_wifi_power_save_persistence()
+        except Exception:
+            logger.exception("WiFi powersave persistence repair failed at startup")
+
     # Check for first boot and print welcome message
     asyncio.create_task(check_first_boot())
 
@@ -2801,6 +2807,16 @@ def _disable_wifi_power_save_for_saved_connections() -> bool:
         return False
 
 
+def _repair_wifi_power_save_persistence() -> bool:
+    """Best-effort runtime repair for persistent WiFi powersave disablement."""
+    if platform.system() != "Linux":
+        return False
+
+    helper_ok = wifi_manager.ensure_wifi_powersave_disabled()
+    profile_ok = _disable_wifi_power_save_for_saved_connections()
+    return helper_ok or profile_ok
+
+
 def _validate_production_update_bundle(source_dir: Path) -> None:
     required_paths = [
         source_dir / "web" / "dist" / "index.html",
@@ -2899,7 +2915,7 @@ async def install_updates():
             }
 
         if not is_dev:
-            _disable_wifi_power_save_for_saved_connections()
+            _repair_wifi_power_save_persistence()
 
         # Dev-mode convenience only: production releases must ship prebuilt web assets.
         web_dir = project_root / "web"

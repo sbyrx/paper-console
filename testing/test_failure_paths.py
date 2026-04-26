@@ -107,6 +107,20 @@ def test_ensure_managed_device_password_store_invokes_privileged_script(monkeypa
     assert commands[0][-1] == "ensure-password-store"
 
 
+def test_ensure_wifi_powersave_disabled_invokes_privileged_script(monkeypatch):
+    commands = []
+
+    def fake_run_command(cmd, check=False):  # noqa: ARG001
+        commands.append(cmd)
+        return _completed(returncode=0)
+
+    monkeypatch.setattr(wifi_manager, "run_command", fake_run_command)
+
+    assert wifi_manager.ensure_wifi_powersave_disabled() is True
+    assert commands
+    assert commands[0][-1] == "ensure-wifi-powersave-off"
+
+
 def test_check_wifi_startup_skips_duplicate_setup_receipt_on_first_boot(monkeypatch):
     sleep_calls = []
     print_calls = []
@@ -684,7 +698,7 @@ def test_install_updates_runs_wifi_power_save_migration_in_production(
     )
     monkeypatch.setattr(
         main_module,
-        "_disable_wifi_power_save_for_saved_connections",
+        "_repair_wifi_power_save_persistence",
         lambda: migration_calls.append("called") or True,
     )
     monkeypatch.setattr(main_module, "_restart_pc1_service", lambda: None)
@@ -693,6 +707,27 @@ def test_install_updates_runs_wifi_power_save_migration_in_production(
 
     assert result["success"] is True
     assert migration_calls == ["called"]
+
+
+def test_repair_wifi_power_save_persistence_runs_helper_and_profile_migration(
+    monkeypatch,
+):
+    calls = []
+
+    monkeypatch.setattr(
+        main_module.wifi_manager,
+        "ensure_wifi_powersave_disabled",
+        lambda: calls.append("helper") or True,
+    )
+    monkeypatch.setattr(
+        main_module,
+        "_disable_wifi_power_save_for_saved_connections",
+        lambda: calls.append("profiles") or False,
+    )
+    monkeypatch.setattr(main_module.platform, "system", lambda: "Linux")
+
+    assert main_module._repair_wifi_power_save_persistence() is True
+    assert calls == ["helper", "profiles"]
 
 
 def test_try_begin_print_job_respects_hold_reservation(monkeypatch):

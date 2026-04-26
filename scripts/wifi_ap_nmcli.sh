@@ -12,6 +12,8 @@ DEVICE_PASSWORD_FILE="${PC1_DEVICE_PASSWORD_FILE:-/etc/pc1/device_password}"
 DEVICE_MANAGED_FILE="${PC1_DEVICE_MANAGED_FILE:-/etc/pc1/device_managed}"
 DEVICE_CONFIG_DIR="$(dirname "$DEVICE_PASSWORD_FILE")"
 NM_DNSMASQ_DIR="${PC1_NM_DNSMASQ_DIR:-/etc/NetworkManager/dnsmasq.d}"
+NM_CONF_DIR="${PC1_NM_CONF_DIR:-/etc/NetworkManager/conf.d}"
+WIFI_POWERSAVE_CONF_FILE="${PC1_WIFI_POWERSAVE_CONF_FILE:-$NM_CONF_DIR/10-wifi-powersave-off.conf}"
 CPUINFO_FILE="${PC1_CPUINFO_FILE:-/proc/cpuinfo}"
 
 # Generate unique SSID suffix from CPU serial.
@@ -194,6 +196,16 @@ ensure_password_store() {
     chmod 0640 "$DEVICE_MANAGED_FILE" || return 1
 }
 
+ensure_wifi_powersave_off() {
+    mkdir -p "$NM_CONF_DIR" || return 1
+    cat > "$WIFI_POWERSAVE_CONF_FILE" <<EOF
+[connection]
+wifi.powersave=2
+EOF
+    chmod 0644 "$WIFI_POWERSAVE_CONF_FILE" || return 1
+    systemctl restart NetworkManager || return 1
+}
+
 status() {
     if nmcli connection show --active 2>/dev/null | grep -q "PC-1-Hotspot"; then
         echo "AP Mode: ACTIVE"
@@ -226,8 +238,12 @@ main() {
             ensure_password_store
             exit $?
             ;;
+        ensure-wifi-powersave-off)
+            ensure_wifi_powersave_off
+            exit $?
+            ;;
         *)
-            echo "Usage: $0 {start|stop|status|ensure-password-store}"
+            echo "Usage: $0 {start|stop|status|ensure-password-store|ensure-wifi-powersave-off}"
             exit 1
             ;;
     esac

@@ -350,6 +350,22 @@ def ensure_managed_device_password_store() -> bool:
         return False
 
 
+def ensure_wifi_powersave_disabled() -> bool:
+    """Recreate the persistent NetworkManager powersave override via the privileged WiFi helper."""
+    script_path = os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "wifi_ap_nmcli.sh"
+    )
+    script_path = os.path.abspath(script_path)
+    try:
+        result = run_command(
+            ["sudo", "-n", "/bin/bash", script_path, "ensure-wifi-powersave-off"],
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def cleanup_dns_hijacking() -> bool:
     """Remove DNS hijacking configuration (captive portal DNS)."""
     try:
