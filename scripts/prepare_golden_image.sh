@@ -187,6 +187,13 @@ run_as_root rm -f \
     "/etc/pc1/device_password" \
     "/etc/pc1/device_managed"
 
+log "Resetting managed Device Password storage"
+run_as_root mkdir -p /etc/pc1
+run_as_root chown root:"$PROJECT_OWNER_USER" /etc/pc1
+run_as_root chmod 0770 /etc/pc1
+run_as_root install -o root -g "$PROJECT_OWNER_USER" -m 0660 /dev/null /etc/pc1/device_password
+run_as_root install -o root -g "$PROJECT_OWNER_USER" -m 0640 /dev/null /etc/pc1/device_managed
+
 log "Removing dev-only files from project tree"
 run_as_root rm -rf \
     "$PROJECT_DIR/.claude" \

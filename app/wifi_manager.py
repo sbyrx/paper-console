@@ -334,6 +334,22 @@ def start_ap_mode(retries: int = 3, retry_delay: float = 5.0) -> bool:
     return False
 
 
+def ensure_managed_device_password_store() -> bool:
+    """Recreate managed device password storage through the privileged WiFi helper."""
+    script_path = os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "wifi_ap_nmcli.sh"
+    )
+    script_path = os.path.abspath(script_path)
+    try:
+        result = run_command(
+            ["sudo", "-n", "/bin/bash", script_path, "ensure-password-store"],
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def cleanup_dns_hijacking() -> bool:
     """Remove DNS hijacking configuration (captive portal DNS)."""
     try:

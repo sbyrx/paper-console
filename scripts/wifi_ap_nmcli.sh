@@ -9,6 +9,8 @@ AP_SSID_PREFIX="PC-1-Setup"
 AP_INTERFACE="wlan0"
 DEVICE_PASSWORD="${PC1_DEVICE_PASSWORD:-}"
 DEVICE_PASSWORD_FILE="${PC1_DEVICE_PASSWORD_FILE:-/etc/pc1/device_password}"
+DEVICE_MANAGED_FILE="${PC1_DEVICE_MANAGED_FILE:-/etc/pc1/device_managed}"
+DEVICE_CONFIG_DIR="$(dirname "$DEVICE_PASSWORD_FILE")"
 NM_DNSMASQ_DIR="${PC1_NM_DNSMASQ_DIR:-/etc/NetworkManager/dnsmasq.d}"
 CPUINFO_FILE="${PC1_CPUINFO_FILE:-/proc/cpuinfo}"
 
@@ -28,6 +30,15 @@ get_device_id_from_file() {
 
 get_device_id() {
     get_device_id_from_file "$CPUINFO_FILE"
+}
+
+get_invoking_user() {
+    local username="${SUDO_USER:-${USER:-}}"
+    if [ -n "$username" ]; then
+        echo "$username"
+        return
+    fi
+    id -un
 }
 
 get_ap_ip() {
@@ -169,6 +180,20 @@ stop_ap() {
     echo "AP Mode Stopped"
 }
 
+ensure_password_store() {
+    local owner_user
+    owner_user=$(get_invoking_user)
+
+    mkdir -p "$DEVICE_CONFIG_DIR" || return 1
+    chown "root:${owner_user}" "$DEVICE_CONFIG_DIR" || return 1
+    chmod 0770 "$DEVICE_CONFIG_DIR" || return 1
+
+    touch "$DEVICE_PASSWORD_FILE" "$DEVICE_MANAGED_FILE" || return 1
+    chown "root:${owner_user}" "$DEVICE_PASSWORD_FILE" "$DEVICE_MANAGED_FILE" || return 1
+    chmod 0660 "$DEVICE_PASSWORD_FILE" || return 1
+    chmod 0640 "$DEVICE_MANAGED_FILE" || return 1
+}
+
 status() {
     if nmcli connection show --active 2>/dev/null | grep -q "PC-1-Hotspot"; then
         echo "AP Mode: ACTIVE"
@@ -197,8 +222,12 @@ main() {
             status
             exit 0
             ;;
+        ensure-password-store)
+            ensure_password_store
+            exit $?
+            ;;
         *)
-            echo "Usage: $0 {start|stop|status}"
+            echo "Usage: $0 {start|stop|status|ensure-password-store}"
             exit 1
             ;;
     esac

@@ -3285,6 +3285,9 @@ class DevicePasswordChange(BaseModel):
 
 @app.get("/api/system/device-password/status")
 async def get_device_password_status():
+    if platform.system() == "Linux" and device_password.is_device_managed():
+        wifi_manager.ensure_managed_device_password_store()
+
     managed = device_password.is_device_managed()
     can_change = device_password.can_change_device_password()
     source = device_password.get_device_password_source()
@@ -3296,10 +3299,16 @@ async def get_device_password_status():
         )
     elif source == "managed_fallback":
         status_label = "Built-in Device Password"
-        message = (
-            "This PC-1 is using its built-in Device Password. Managed password storage has not been provisioned on this unit yet, "
-            "so password changes and SSH sync are not available from settings."
-        )
+        if can_change:
+            message = (
+                "This PC-1 is currently using its built-in Device Password. Managed password storage is ready on this unit, "
+                "so you can save your own password from settings and sync SSH access at the same time."
+            )
+        else:
+            message = (
+                "This PC-1 is using its built-in Device Password. Managed password storage has not been provisioned on this unit yet, "
+                "so password changes and SSH sync are not available from settings."
+            )
     elif source == "file":
         status_label = "Stored Locally"
         message = (
@@ -3337,6 +3346,9 @@ async def change_device_password(
 ):
     """Change the canonical Device Password used by settings, setup WiFi, and SSH."""
     try:
+        if platform.system() == "Linux" and device_password.is_device_managed():
+            wifi_manager.ensure_managed_device_password_store()
+
         if not device_password.can_change_device_password():
             return {
                 "success": False,

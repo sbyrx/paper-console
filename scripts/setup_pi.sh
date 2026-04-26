@@ -246,7 +246,9 @@ DEVICE_MANAGED_FILE="$DEVICE_CONFIG_DIR/device_managed"
 
 mkdir -p "$DEVICE_CONFIG_DIR"
 chown root:"$USER_NAME" "$DEVICE_CONFIG_DIR"
-chmod 0750 "$DEVICE_CONFIG_DIR"
+# Keep the directory group-writable so the app service user can recreate the
+# managed password file after image scrubbing or first-boot recovery.
+chmod 0770 "$DEVICE_CONFIG_DIR"
 
 if [ -f "$DEVICE_PASSWORD_FILE" ]; then
     DEVICE_PASSWORD=$(tr -d '\r\n' < "$DEVICE_PASSWORD_FILE")

@@ -93,6 +93,20 @@ def test_start_ap_mode_returns_false_after_all_retries(monkeypatch):
     assert wifi_manager.start_ap_mode(retries=2, retry_delay=0) is False
 
 
+def test_ensure_managed_device_password_store_invokes_privileged_script(monkeypatch):
+    commands = []
+
+    def fake_run_command(cmd, check=False):  # noqa: ARG001
+        commands.append(cmd)
+        return _completed(returncode=0)
+
+    monkeypatch.setattr(wifi_manager, "run_command", fake_run_command)
+
+    assert wifi_manager.ensure_managed_device_password_store() is True
+    assert commands
+    assert commands[0][-1] == "ensure-password-store"
+
+
 def test_check_wifi_startup_skips_duplicate_setup_receipt_on_first_boot(monkeypatch):
     sleep_calls = []
     print_calls = []
@@ -1139,6 +1153,74 @@ def test_factory_reset_resets_managed_device_password(monkeypatch, tmp_path: Pat
     monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
     monkeypatch.setenv("USER", "pc1")
     monkeypatch.setattr(factory_reset_module.platform, "system", lambda: "Linux")
+
+    result = factory_reset_module.perform_factory_reset()
+
+    assert result["config_cleared"] is True
+    assert result["device_password_reset"] is True
+    assert result["wifi_cleared"] is True
+    assert result["reboot_requested"] is True
+    assert result["errors"] == []
+    assert password_file.read_text(encoding="utf-8").strip() == "freshpass"
+    assert calls[0][0][-1] == "ensure-password-store"
+    assert calls[1][0] == ["sudo", "chpasswd"]
+    assert calls[1][1]["input"] == "pc1:freshpass\n"
+    assert calls[2][0] == ["sudo", "reboot"]
+
+
+def test_factory_reset_recovers_missing_managed_password_store(monkeypatch, tmp_path: Path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "config.json").write_text("{}", encoding="utf-8")
+    (project_root / "config.json.bak").write_text("{}", encoding="utf-8")
+    (project_root / ".welcome_printed").write_text("1\n", encoding="utf-8")
+
+    password_file = tmp_path / "etc" / "pc1" / "device_password"
+    managed_file = tmp_path / "etc" / "pc1" / "device_managed"
+
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(
+        factory_reset_module,
+        "_project_base_dir",
+        lambda: str(project_root),
+    )
+    monkeypatch.setattr(factory_reset_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        factory_reset_module.wifi_manager, "forget_all_wifi", lambda: True
+    )
+    monkeypatch.setattr(
+        factory_reset_module.device_password,
+        "generate_device_password",
+        lambda length=8: "freshpass",
+    )
+    def ensure_store():
+        password_file.parent.mkdir(parents=True, exist_ok=True)
+        password_file.write_text("", encoding="utf-8")
+        managed_file.write_text("1\n", encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(
+        factory_reset_module.wifi_manager,
+        "ensure_managed_device_password_store",
+        ensure_store,
+    )
+    monkeypatch.setenv("PC1_DEVICE_PASSWORD_FILE", str(password_file))
+    monkeypatch.setenv("PC1_DEVICE_MANAGED_FILE", str(managed_file))
+    monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
+    monkeypatch.setenv("USER", "pc1")
+    monkeypatch.setattr(factory_reset_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        factory_reset_module.device_password,
+        "_looks_like_pc1_host",
+        lambda: True,
+    )
 
     result = factory_reset_module.perform_factory_reset()
 

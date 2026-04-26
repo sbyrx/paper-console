@@ -45,6 +45,20 @@ def test_raspberry_pi_host_uses_managed_fallback_without_marker(monkeypatch, tmp
     assert device_password.can_change_device_password() is False
 
 
+def test_managed_fallback_with_placeholder_file_can_change(monkeypatch, tmp_path: Path):
+    password_file = tmp_path / "device_password"
+    managed_file = tmp_path / "device_managed"
+    password_file.write_text("", encoding="utf-8")
+    managed_file.write_text("1\n", encoding="utf-8")
+
+    monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
+    monkeypatch.setenv("PC1_DEVICE_PASSWORD_FILE", str(password_file))
+    monkeypatch.setenv("PC1_DEVICE_MANAGED_FILE", str(managed_file))
+
+    assert device_password.get_device_password_source() == "managed_fallback"
+    assert device_password.can_change_device_password() is True
+
+
 def test_device_password_fallback_is_lowercase_letters_only(monkeypatch, tmp_path: Path):
     password_file = tmp_path / "missing" / "device_password"
 

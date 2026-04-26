@@ -40,6 +40,15 @@ def _sync_system_password(new_password: str) -> None:
 
 
 def _reset_device_password(errors: List[str]) -> bool:
+    if platform.system() == "Linux" and device_password.is_device_managed():
+        try:
+            wifi_manager.ensure_managed_device_password_store()
+        except Exception:
+            logger.warning(
+                "Factory reset: failed to ensure managed Device Password store",
+                exc_info=True,
+            )
+
     try:
         previous_password = device_password.get_device_password()
         new_password = device_password.reset_device_password()
