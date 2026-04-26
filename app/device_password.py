@@ -15,8 +15,63 @@ DEVICE_MANAGED_ENV = "PC1_DEVICE_MANAGED"
 DEVICE_MANAGED_FILE_ENV = "PC1_DEVICE_MANAGED_FILE"
 DEVICE_MANAGED_FILE_DEFAULT = "/etc/pc1/device_managed"
 MIN_DEVICE_PASSWORD_LENGTH = 8
-DEFAULT_DEVICE_PASSWORD_LENGTH = 8
-DEFAULT_DEVICE_PASSWORD_ALPHABET = "abcdefghijklmnopqrstuvwxyz"
+DEFAULT_DEVICE_PASSWORD_SEPARATOR = "-"
+DEFAULT_DEVICE_PASSWORD_WORDS = (
+    "aqua",
+    "atom",
+    "aura",
+    "bark",
+    "beam",
+    "bear",
+    "bird",
+    "cave",
+    "clay",
+    "cove",
+    "dawn",
+    "deer",
+    "dune",
+    "echo",
+    "fern",
+    "fire",
+    "gale",
+    "glen",
+    "gold",
+    "hail",
+    "haze",
+    "iris",
+    "jade",
+    "kiln",
+    "lake",
+    "leaf",
+    "lime",
+    "mist",
+    "moon",
+    "moss",
+    "opal",
+    "pine",
+    "rain",
+    "reed",
+    "reef",
+    "rose",
+    "sage",
+    "seed",
+    "silk",
+    "snow",
+    "star",
+    "surf",
+    "tide",
+    "vale",
+    "wave",
+    "west",
+    "wind",
+    "wolf",
+    "wren",
+)
+DEFAULT_DEVICE_PASSWORD_WORD_COUNT = 2
+DEFAULT_DEVICE_PASSWORD_LENGTH = (
+    (DEFAULT_DEVICE_PASSWORD_WORD_COUNT * 4)
+    + len(DEFAULT_DEVICE_PASSWORD_SEPARATOR)
+)
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -82,28 +137,36 @@ def _device_password_store_writable() -> bool:
 
 
 def _format_default_device_password(source_bytes: bytes) -> str:
-    alphabet = DEFAULT_DEVICE_PASSWORD_ALPHABET
-    return "".join(
-        alphabet[byte % len(alphabet)]
-        for byte in source_bytes[:DEFAULT_DEVICE_PASSWORD_LENGTH]
-    )
+    words = DEFAULT_DEVICE_PASSWORD_WORDS
+    selected_words = []
+    for idx in range(DEFAULT_DEVICE_PASSWORD_WORD_COUNT):
+        start = idx * 2
+        chunk = source_bytes[start : start + 2]
+        if len(chunk) < 2:
+            chunk = chunk.ljust(2, b"\x00")
+        selected_words.append(words[int.from_bytes(chunk, "big") % len(words)])
+    return DEFAULT_DEVICE_PASSWORD_SEPARATOR.join(selected_words)
 
 
 def generate_device_password(length: int = DEFAULT_DEVICE_PASSWORD_LENGTH) -> str:
     """Generate a fresh user-facing Device Password."""
-    password_length = max(length, MIN_DEVICE_PASSWORD_LENGTH)
-    return "".join(
-        secrets.choice(DEFAULT_DEVICE_PASSWORD_ALPHABET)
-        for _ in range(password_length)
+    # Keep the length parameter for backwards compatibility with existing call
+    # sites, but all generated defaults now use the fixed word-pair format.
+    _ = length
+    return _format_default_device_password(
+        secrets.token_bytes(DEFAULT_DEVICE_PASSWORD_WORD_COUNT * 2)
     )
 
 
-def _fallback_device_password() -> str:
-    digest = hashlib.sha256(
-        get_device_password_seed().encode("utf-8", errors="ignore")
-    ).digest()
-    # Keep the fallback deterministic, lowercase, and letters-only.
+def derive_device_password_from_seed(seed: str) -> str:
+    """Derive the deterministic default Device Password from a stable seed."""
+    digest = hashlib.sha256(seed.encode("utf-8", errors="ignore")).digest()
     return _format_default_device_password(digest)
+
+
+def _fallback_device_password() -> str:
+    # Keep the fallback deterministic and human-readable for printed setup use.
+    return derive_device_password_from_seed(get_device_password_seed())
 
 
 def get_device_password_seed() -> str:

@@ -15,6 +15,8 @@ NM_DNSMASQ_DIR="${PC1_NM_DNSMASQ_DIR:-/etc/NetworkManager/dnsmasq.d}"
 NM_CONF_DIR="${PC1_NM_CONF_DIR:-/etc/NetworkManager/conf.d}"
 WIFI_POWERSAVE_CONF_FILE="${PC1_WIFI_POWERSAVE_CONF_FILE:-$NM_CONF_DIR/10-wifi-powersave-off.conf}"
 CPUINFO_FILE="${PC1_CPUINFO_FILE:-/proc/cpuinfo}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 # Generate unique SSID suffix from CPU serial.
 get_device_id_from_file() {
@@ -83,14 +85,12 @@ get_device_password() {
         fi
     fi
     seed=$(get_password_seed)
-    python3 - "$seed" <<'PY'
-import hashlib
+    PYTHONPATH="$PROJECT_DIR" python3 - "$seed" <<'PY'
 import sys
 
-alphabet = "abcdefghijklmnopqrstuvwxyz"
-seed = sys.argv[1]
-digest = hashlib.sha256(seed.encode("utf-8", errors="ignore")).digest()
-print("".join(alphabet[byte % len(alphabet)] for byte in digest[:8]))
+from app.device_password import derive_device_password_from_seed
+
+print(derive_device_password_from_seed(sys.argv[1]))
 PY
 }
 

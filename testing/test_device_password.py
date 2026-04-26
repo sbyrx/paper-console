@@ -59,14 +59,24 @@ def test_managed_fallback_with_placeholder_file_can_change(monkeypatch, tmp_path
     assert device_password.can_change_device_password() is True
 
 
-def test_device_password_fallback_is_lowercase_letters_only(monkeypatch, tmp_path: Path):
+def test_generate_device_password_uses_word_pair_format():
+    generated = device_password.generate_device_password()
+
+    left, right = generated.split("-", 1)
+    assert len(left) == 4
+    assert len(right) == 4
+    assert left in device_password.DEFAULT_DEVICE_PASSWORD_WORDS
+    assert right in device_password.DEFAULT_DEVICE_PASSWORD_WORDS
+
+
+def test_device_password_fallback_uses_word_pair_format(monkeypatch, tmp_path: Path):
     password_file = tmp_path / "missing" / "device_password"
 
     monkeypatch.delenv("PC1_DEVICE_PASSWORD", raising=False)
     monkeypatch.setenv("PC1_DEVICE_PASSWORD_FILE", str(password_file))
     monkeypatch.setattr(device_password, "get_device_password_seed", lambda: "seed-value")
 
-    assert device_password.get_device_password() == "vevaibma"
+    assert device_password.get_device_password() == "sage-fire"
 
 
 def test_set_device_password_updates_managed_file(monkeypatch, tmp_path: Path):

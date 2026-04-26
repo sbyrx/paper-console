@@ -257,11 +257,10 @@ else
 fi
 
 if [ "${#DEVICE_PASSWORD}" -lt 8 ]; then
-    DEVICE_PASSWORD=$("$PYTHON_EXEC" - <<'PY'
-import secrets
+    DEVICE_PASSWORD=$(PYTHONPATH="$PROJECT_DIR" "$PYTHON_EXEC" - <<'PY'
+from app.device_password import generate_device_password
 
-alphabet = "abcdefghijklmnopqrstuvwxyz"
-print("".join(secrets.choice(alphabet) for _ in range(8)))
+print(generate_device_password())
 PY
 )
     printf '%s\n' "$DEVICE_PASSWORD" > "$DEVICE_PASSWORD_FILE"
