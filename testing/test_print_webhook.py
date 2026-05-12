@@ -8,6 +8,7 @@ from PIL import Image
 from starlette.requests import Request
 
 import app.main as main_module
+import app.hardware as hardware_module
 import app.print_webhook_service as print_webhook_service
 from app.config import ChannelConfig, ChannelModuleAssignment, ModuleInstance, PrintWebhookConfig
 from app.modules import print_webhook
@@ -208,7 +209,7 @@ def test_receive_print_webhook_allows_missing_auth_when_token_blank(monkeypatch)
         {1: ChannelConfig(modules=[ChannelModuleAssignment(module_id=module.id, order=0)])},
     )
     monkeypatch.setattr(main_module.dial, "read_position", lambda: 1)
-    monkeypatch.setattr(main_module, "_try_begin_print_job", lambda debounce=False: True)
+    monkeypatch.setattr(hardware_module, "try_begin_print_job", lambda debounce=False: True)
 
     request = _make_request(b"hello", content_type="text/plain", token=None)
     background_tasks = BackgroundTasks()
@@ -255,7 +256,7 @@ def test_receive_print_webhook_returns_423_when_printer_busy(monkeypatch):
         {1: ChannelConfig(modules=[ChannelModuleAssignment(module_id=module.id, order=0)])},
     )
     monkeypatch.setattr(main_module.dial, "read_position", lambda: 1)
-    monkeypatch.setattr(main_module, "_try_begin_print_job", lambda debounce=False: False)
+    monkeypatch.setattr(hardware_module, "try_begin_print_job", lambda debounce=False: False)
 
     request = _make_request(
         b"hello",
@@ -283,7 +284,7 @@ def test_receive_print_webhook_accepts_text_and_schedules_background_print(
         {1: ChannelConfig(modules=[ChannelModuleAssignment(module_id=module.id, order=0)])},
     )
     monkeypatch.setattr(main_module.dial, "read_position", lambda: 1)
-    monkeypatch.setattr(main_module, "_try_begin_print_job", lambda debounce=False: True)
+    monkeypatch.setattr("app.main.try_begin_print_job", lambda debounce=False: True)
 
     request = _make_request(
         b"Front door motion",
@@ -536,8 +537,7 @@ def test_run_print_webhook_print_job_clears_reservation(monkeypatch):
     monkeypatch.setattr(main_module.settings, "max_print_lines", 200)
     monkeypatch.setattr(main_module, "printer", printer)
     monkeypatch.setattr(
-        main_module,
-        "_clear_print_reservation",
+        "app.main.clear_print_reservation",
         lambda clear_hold=False: cleared.append(clear_hold),
     )
 

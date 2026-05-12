@@ -780,7 +780,7 @@ def test_repair_wifi_power_save_persistence_runs_helper_and_profile_migration(
 def test_try_begin_print_job_respects_hold_reservation(monkeypatch):
     monkeypatch.setattr(hardware_module, "print_in_progress", False)
     monkeypatch.setattr(hardware_module, "hold_action_in_progress", True)
-    monkeypatch.setattr(main_module, "hold_action_started_at", time.time())
+    monkeypatch.setattr(hardware_module, "hold_action_started_at", time.time())
     monkeypatch.setattr(hardware_module, "last_print_time", 0.0)
 
     assert hardware_module.try_begin_print_job(debounce=False) is False
@@ -791,7 +791,7 @@ def test_try_begin_print_job_respects_hold_reservation(monkeypatch):
     hardware_module.clear_print_reservation()
     assert hardware_module.print_in_progress is False
     assert hardware_module.hold_action_in_progress is False
-    assert main_module.hold_action_started_at == 0.0
+    assert hardware_module.hold_action_started_at == 0.0
 
 
 def test_clear_print_reservation_updates_debounce_from_completion(monkeypatch):
@@ -802,39 +802,39 @@ def test_clear_print_reservation_updates_debounce_from_completion(monkeypatch):
         def drain_pending_events(self):
             drained.append("drained")
 
-    monkeypatch.setattr(main_module.time, "time", lambda: now)
-    monkeypatch.setattr(main_module, "button", FakeButton())
-    monkeypatch.setattr(main_module, "print_in_progress", True)
-    monkeypatch.setattr(main_module, "hold_action_in_progress", False)
-    monkeypatch.setattr(main_module, "hold_action_started_at", 0.0)
-    monkeypatch.setattr(main_module, "last_print_time", 0.0)
+    monkeypatch.setattr(hardware_module.time, "time", lambda: now)
+    monkeypatch.setattr(hardware_module, "button", FakeButton())
+    monkeypatch.setattr(hardware_module, "print_in_progress", True)
+    monkeypatch.setattr(hardware_module, "hold_action_in_progress", False)
+    monkeypatch.setattr(hardware_module, "hold_action_started_at", 0.0)
+    monkeypatch.setattr(hardware_module, "last_print_time", 0.0)
 
-    main_module._clear_print_reservation(clear_hold=False)
+    hardware_module.clear_print_reservation(clear_hold=False)
 
-    assert main_module.print_in_progress is False
-    assert main_module.last_print_time == now
+    assert hardware_module.print_in_progress is False
+    assert hardware_module.last_print_time == now
     assert drained == ["drained"]
 
 
 def test_try_begin_print_job_clears_stale_hold_reservation(monkeypatch):
     now = 1_000.0
 
-    monkeypatch.setattr(main_module.time, "time", lambda: now)
-    monkeypatch.setattr(main_module, "print_in_progress", False)
-    monkeypatch.setattr(main_module, "hold_action_in_progress", True)
+    monkeypatch.setattr(hardware_module.time, "time", lambda: now)
+    monkeypatch.setattr(hardware_module, "print_in_progress", False)
+    monkeypatch.setattr(hardware_module, "hold_action_in_progress", True)
     monkeypatch.setattr(
-        main_module,
+        hardware_module,
         "hold_action_started_at",
-        now - main_module.HOLD_ACTION_TIMEOUT_SECONDS - 1,
+        now - hardware_module.HOLD_ACTION_TIMEOUT_SECONDS - 1,
     )
-    monkeypatch.setattr(main_module, "last_print_time", 0.0)
+    monkeypatch.setattr(hardware_module, "last_print_time", 0.0)
 
-    assert main_module._try_begin_print_job(debounce=False) is True
-    assert main_module.print_in_progress is True
-    assert main_module.hold_action_in_progress is False
-    assert main_module.hold_action_started_at == 0.0
+    assert hardware_module.try_begin_print_job(debounce=False) is True
+    assert hardware_module.print_in_progress is True
+    assert hardware_module.hold_action_in_progress is False
+    assert hardware_module.hold_action_started_at == 0.0
 
-    main_module._clear_print_reservation()
+    hardware_module.clear_print_reservation()
 
 
 def test_on_factory_reset_threadsafe_promotes_hold_reservation(monkeypatch):
@@ -852,14 +852,14 @@ def test_on_factory_reset_threadsafe_promotes_hold_reservation(monkeypatch):
     monkeypatch.setattr(main_module, "global_loop", DummyLoop())
     monkeypatch.setattr(hardware_module, "print_in_progress", False)
     monkeypatch.setattr(hardware_module, "hold_action_in_progress", True)
-    monkeypatch.setattr(main_module, "hold_action_started_at", time.time())
+    monkeypatch.setattr(hardware_module, "hold_action_started_at", time.time())
     monkeypatch.setattr(main_module.asyncio, "run_coroutine_threadsafe", fake_run_coroutine_threadsafe)
 
     main_module.on_factory_reset_threadsafe()
 
     assert hardware_module.print_in_progress is True
     assert hardware_module.hold_action_in_progress is False
-    assert main_module.hold_action_started_at == 0.0
+    assert hardware_module.hold_action_started_at == 0.0
     assert captured["loop"] is main_module.global_loop
     captured["coro"].close()
 
@@ -898,8 +898,7 @@ def test_long_press_menu_trigger_drains_pending_button_events_before_unlock(monk
     monkeypatch.setattr(main_module, "button", FakeButton())
     monkeypatch.setattr(main_module, "_print_long_press_menu", lambda pos: order.append(f"print_menu_{pos}"))
     monkeypatch.setattr(
-        main_module,
-        "_clear_print_reservation",
+        "app.main.clear_print_reservation",
         lambda clear_hold=False: order.append(f"clear_reservation_{clear_hold}"),
     )
 
@@ -957,7 +956,7 @@ def test_trigger_channel_does_not_hard_reset_printer_between_normal_jobs(monkeyp
 
     monkeypatch.setattr(main_module, "printer", FakePrinter())
     monkeypatch.setattr(main_module, "settings", types.SimpleNamespace(max_print_lines=200, channels={1: None}))
-    monkeypatch.setattr(main_module, "_clear_print_reservation", lambda clear_hold=False: None)
+    monkeypatch.setattr(hardware_module, "clear_print_reservation", lambda clear_hold=False: None)
 
     asyncio.run(main_module.trigger_channel(1))
 
@@ -988,7 +987,7 @@ def test_scheduler_loop_skips_trigger_when_hold_reserved(monkeypatch):
     monkeypatch.setattr(hardware_module, "print_in_progress", False)
     monkeypatch.setattr(hardware_module, "hold_action_in_progress", True)
     monkeypatch.setattr(
-        main_module,
+        hardware_module,
         "hold_action_started_at",
         time.time(),
     )
@@ -1023,7 +1022,7 @@ def test_scheduler_loop_uses_configured_local_time(monkeypatch):
         "channels",
         {1: types.SimpleNamespace(schedule=["12:00"])},
     )
-    monkeypatch.setattr(main_module, "_try_begin_print_job", lambda debounce=False: True)
+    monkeypatch.setattr(hardware_module, "try_begin_print_job", lambda debounce=False: True)
 
     try:
         asyncio.run(main_module.scheduler_loop())
@@ -1867,8 +1866,8 @@ def test_quick_actions_ignores_invalid_selection_without_printing(monkeypatch):
     monkeypatch.setattr(main_module, "button", FakeButton())
     monkeypatch.setattr(main_module, "_print_long_press_menu", lambda pos: order.append(f"print_menu_{pos}"))
     monkeypatch.setattr(
-        main_module,
-        "_clear_print_reservation",
+        hardware_module,
+        "clear_print_reservation",
         lambda clear_hold=False: order.append(f"clear_reservation_{clear_hold}"),
     )
     monkeypatch.setattr(main_module.asyncio, "get_event_loop", lambda: FakeLoop())
@@ -1964,8 +1963,7 @@ def test_invalid_selection_position_does_not_blip(monkeypatch):
 
     monkeypatch.setattr(main_module, "printer", FakePrinter())
     monkeypatch.setattr(
-        main_module,
-        "_clear_print_reservation",
+        "app.main.clear_print_reservation",
         lambda clear_hold=False: calls.append(f"clear_{clear_hold}"),
     )
 
@@ -2042,7 +2040,7 @@ def test_interactive_module_picker_ignores_empty_slots(monkeypatch):
         lambda module_type: types.SimpleNamespace(interactive=True),
         raising=False,
     )
-    monkeypatch.setattr(main_module, "_clear_print_reservation", lambda clear_hold=False: None)
+    monkeypatch.setattr(hardware_module, "clear_print_reservation", lambda clear_hold=False: None)
 
     selection_mode.exit_selection_mode()
 

@@ -128,8 +128,7 @@ from app.hardware import (
     try_begin_print_job,
     clear_print_reservation,
     reserve_hold_action,
-    promote_hold_to_print_job,
-    is_printer_reserved,
+    promote_hold_to_print_job
 )
 import app.location_lookup as location_lookup
 
@@ -442,17 +441,7 @@ async def scheduler_loop():
 # Print state tracking with proper thread synchronization
 import threading
 
-print_lock = threading.Lock()
-print_in_progress = False
-hold_action_in_progress = False
-hold_action_started_at = 0.0
-last_print_time = 0.0
-PRINT_DEBOUNCE_SECONDS = 3.0  # Minimum time between print jobs
-HOLD_ACTION_TIMEOUT_SECONDS = 20.0
-
-
 global_loop = None
-
 
 def on_button_press_threadsafe():
     """Callback that schedules the trigger on the main event loop."""
@@ -779,7 +768,7 @@ async def long_press_menu_trigger():
             await loop.run_in_executor(executor, _initial_print)
     except Exception:
         logger.exception("Failed to render long-press menu")
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
         return
 
     def _handle_quick_action(dial_position: int):
@@ -840,7 +829,7 @@ async def long_press_menu_trigger():
         valid_positions={1, 2, 3, 4, 5, 8},
     )
     # Release lock only after quick-actions selection mode is fully active.
-    _clear_print_reservation(clear_hold=False)
+    clear_print_reservation(clear_hold=False)
 
     async def _auto_exit_quick_actions_after_timeout(module_id: str):
         """Auto-exit quick actions if no selection is made within timeout."""
@@ -4683,8 +4672,60 @@ async def print_module_direct(module_id: str):
             await loop.run_in_executor(executor, _do_print)
     finally:
         # Always mark print as complete (thread-safe)
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
 
+def _print_print_webhook_job_sync(module_id: str, job: dict) -> None:
+    print_webhook_service.print_job(
+        modules=settings.modules,
+        printer=printer,
+        max_print_lines=getattr(settings, "max_print_lines", 200),
+        module_id=module_id,
+        job=job,
+    )
+
+
+async def _run_print_webhook_print_job(module_id: str, job: dict) -> None:
+    try:
+        await asyncio.to_thread(_print_print_webhook_job_sync, module_id, job)
+    finally:
+        clear_print_reservation(clear_hold=False)
+
+
+@app.post("/hook/{endpoint_path:path}")
+async def receive_print_webhook(
+    endpoint_path: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    body = await request.body()
+    try:
+        dial_position = dial.read_position()
+    except Exception:
+        logger.exception("Could not read dial position while checking webhook channel gate")
+        dial_position = None
+
+    prepared_job = print_webhook_service.prepare_incoming_job(
+        modules=settings.modules,
+        channels=settings.channels,
+        endpoint_path=endpoint_path,
+        request=request,
+        dial_position=dial_position,
+        body=body,
+    )
+
+    if not try_begin_print_job(debounce=False):
+        raise HTTPException(status_code=423, detail="Printer is already busy")
+
+    background_tasks.add_task(
+        _run_print_webhook_print_job,
+        prepared_job.module_id,
+        prepared_job.job,
+    )
+    return Response(
+        content='{"message":"Print request accepted"}',
+        status_code=202,
+        media_type="application/json",
+    )
 
 @app.post("/debug/test-webhook", dependencies=[Depends(require_admin_access)])
 async def test_webhook(action: WebhookConfig):
