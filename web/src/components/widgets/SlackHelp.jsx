@@ -93,6 +93,7 @@ const SlackHelp = ({ rootValue = {} }) => {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
 
   const botToken = String(rootValue.bot_token || '').trim();
   const appToken = String(rootValue.app_token || '').trim();
@@ -183,38 +184,48 @@ const SlackHelp = ({ rootValue = {} }) => {
         )}
       </div>
 
-      <div className="rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 p-4 space-y-2">
-        <div className="text-sm font-bold text-black">How to connect Slack</div>
-        <ol className="list-decimal pl-4 space-y-2">
-          {SETUP_STEPS.map((step, idx) => (
-            <li key={idx} className="text-xs text-zinc-600 leading-5">
-              {step}
-            </li>
-          ))}
-        </ol>
+      <p className="text-xs text-zinc-500 leading-5">
+        Messages print as they arrive, even when this module is not on the
+        active dial channel. Pressing the print button on a channel with this
+        module prints a connection status receipt.
+      </p>
 
-        <div className="space-y-1 pt-1">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs font-bold text-black uppercase tracking-wide">App Manifest</div>
-            <button
-              type="button"
-              onClick={copyManifest}
-              className="text-xs px-2 py-1 border-2 border-gray-300 rounded-lg hover:border-black transition-colors"
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+      <button
+        type="button"
+        onClick={() => setShowSetup((open) => !open)}
+        className="text-sm px-3 py-1.5 border-2 border-gray-300 rounded-lg hover:border-black transition-colors"
+      >
+        {showSetup ? 'Hide setup instructions' : 'How to connect Slack'}
+      </button>
+
+      {showSetup && (
+        <div className="rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 p-4 space-y-2">
+          <div className="text-sm font-bold text-black">How to connect Slack</div>
+          <ol className="list-decimal pl-4 space-y-2">
+            {SETUP_STEPS.map((step, idx) => (
+              <li key={idx} className="text-xs text-zinc-600 leading-5">
+                {step}
+              </li>
+            ))}
+          </ol>
+
+          <div className="space-y-1 pt-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-bold text-black uppercase tracking-wide">App Manifest</div>
+              <button
+                type="button"
+                onClick={copyManifest}
+                className="text-xs px-2 py-1 border-2 border-gray-300 rounded-lg hover:border-black transition-colors"
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <pre className="overflow-x-auto rounded border border-zinc-200 bg-white p-3 text-[11px] leading-4 text-zinc-700 whitespace-pre max-h-48 overflow-y-auto">
+              {MANIFEST_JSON}
+            </pre>
           </div>
-          <pre className="overflow-x-auto rounded border border-zinc-200 bg-white p-3 text-[11px] leading-4 text-zinc-700 whitespace-pre max-h-48 overflow-y-auto">
-            {MANIFEST_JSON}
-          </pre>
         </div>
-
-        <p className="text-xs text-zinc-500 leading-5 pt-1">
-          Messages print as they arrive, even when this module is not on the
-          active dial channel. Pressing the print button on a channel with this
-          module prints a connection status receipt.
-        </p>
-      </div>
+      )}
     </div>
   );
 };

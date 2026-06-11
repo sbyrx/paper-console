@@ -47,11 +47,6 @@ STATUS_LABELS = {
                 "description": "Print DMs sent to the bot as they arrive.",
                 "default": True,
             },
-            "advanced_options": {
-                "type": "null",
-                "title": "Advanced",
-                "description": "Optional restrictions for who can print.",
-            },
             "allowed_user_ids": {
                 "type": "string",
                 "title": "Allowed Slack User IDs",
@@ -63,10 +58,6 @@ STATUS_LABELS = {
     ui_schema={
         "bot_token": {"ui:widget": "password", "ui:placeholder": "xoxb-..."},
         "app_token": {"ui:widget": "password", "ui:placeholder": "xapp-..."},
-        "advanced_options": {
-            "ui:widget": "advanced-section",
-            "ui:options": {"fields": ["allowed_user_ids"]},
-        },
         "allowed_user_ids": {"ui:placeholder": "U0123ABC, U0456DEF"},
         "setup_help": {"ui:widget": "slack-help"},
     },
