@@ -123,6 +123,49 @@ cd web && npm install
    # Or: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
+### Docker (Software-Only / Mock Printer)
+
+If you want to run PC-1 without Raspberry Pi hardware, you can also run the app in Docker and use the built-in terminal "printer" output for testing.
+
+1. **Create a `Dockerfile` in the repo root:**
+   ```Dockerfile
+   FROM python:3.12-bookworm
+
+   WORKDIR /paper-console
+
+   COPY . .
+
+   RUN apt update && apt install -y sudo npm nodejs network-manager
+
+   RUN pip install Pillow
+   RUN pip install fastapi uvicorn[standard] pydantic requests
+   RUN pip install feedparser icalendar pytz python-dateutil astral beautifulsoup4
+   RUN pip install pytest
+
+   RUN python3 -m venv .venv; ./.venv/bin/python -m pip install -r requirements-dev.txt
+
+   ENTRYPOINT ["./run.sh"]
+   ```
+
+2. **Build the image:**
+   ```bash
+   docker buildx build -t local/pc-1 .
+   ```
+
+3. **Run the container:**
+   ```bash
+   docker run --rm -it -p 8000:8000 local/pc-1
+   ```
+
+4. **Open the app:**
+   Visit `http://localhost:8000` in your browser.
+
+5. **Find the device password:**
+   Check the container logs for the printed setup output, especially the `STEP 1: CONNECT TO WIFI` section.
+
+6. **Use the mock printer:**
+   When you print a channel from the web UI, the output appears in the terminal running the container.
+
 ### Raspberry Pi Deployment
 
 1. **Install Python Dependencies:**
