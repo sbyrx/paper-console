@@ -144,6 +144,15 @@ class ChannelModuleAssignment(BaseModel):
     order: int = 0  # Order within the channel (0 = first)
 
 
+class ScheduleRule(BaseModel):
+    """A cron-based schedule rule, evaluated in the device timezone."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    expression: str  # 5-field cron expression, e.g. "30 8 * * 1-5"
+    enabled: bool = True
+
+
 class ChannelConfig(BaseModel):
     """Channel configuration - can have multiple modules assigned."""
 
@@ -152,8 +161,12 @@ class ChannelConfig(BaseModel):
     # New format: list of module assignments
     modules: List[ChannelModuleAssignment] = []
 
-    # Schedule: List of times in "HH:MM" 24h format to automatically print this channel
+    # Legacy schedule: list of "HH:MM" times. Converted to schedule_rules on
+    # first save; still honored at runtime for configs that predate cron rules.
     schedule: List[str] = []
+
+    # Cron schedule rules (current format).
+    schedule_rules: List[ScheduleRule] = []
 
 
 from pydantic import field_validator, Field

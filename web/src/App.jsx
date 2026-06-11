@@ -947,6 +947,7 @@ function App() {
           onClose={() => setShowScheduleModal(null)}
           onUpdate={(newSchedule) => updateChannelSchedule(showScheduleModal, newSchedule)}
           timeFormat={settings.time_format}
+          timezone={settings.timezone}
         />
 
         <APInstructionsModal show={showAPInstructions} wifiStatus={wifiStatus} />

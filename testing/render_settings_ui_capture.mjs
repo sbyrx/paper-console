@@ -452,7 +452,7 @@ async function captureClientWorkflow(state, page, args, outputDir, createdModule
       timeout: args.timeoutMs,
     });
     const scheduleModal = page
-      .locator(".fixed.inset-0 .max-w-md")
+      .locator('.fixed.inset-0 div[class*="max-w-"]')
       .filter({ hasText: "Schedule Channel" })
       .last();
     await capture(state, page, outputDir, "schedule_modal", "Schedule modal", {

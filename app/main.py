@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -93,8 +93,16 @@ from app.config import (
     ModuleInstance,
     ChannelModuleAssignment,
     ChannelConfig,
+    ScheduleRule,
     PRINTER_WIDTH,
     current_datetime,
+)
+from app.schedule_utils import (
+    cron_matches_minute,
+    humanize_cron,
+    legacy_schedule_to_rules,
+    next_fire_times,
+    normalize_schedule_rules,
 )
 
 # Import modules package to trigger auto-discovery and registration
@@ -258,22 +266,47 @@ def _iter_weather_modules_for_channel(channel: Optional[ChannelConfig]) -> List[
     return weather_modules
 
 
-def _parse_scheduled_datetime(now: datetime, schedule_time: str) -> Optional[datetime]:
-    """Build today's next scheduled datetime for a HH:MM schedule entry."""
-    try:
-        hour_str, minute_str = schedule_time.split(":", 1)
-        scheduled_for = now.replace(
-            hour=int(hour_str),
-            minute=int(minute_str),
-            second=0,
-            microsecond=0,
-        )
-    except (TypeError, ValueError):
-        return None
+def _channel_schedule_rules(channel: Optional[ChannelConfig]) -> List[ScheduleRule]:
+    """Return active-format schedule rules for a channel.
 
-    if scheduled_for <= now:
-        scheduled_for += timedelta(days=1)
-    return scheduled_for
+    Prefers cron `schedule_rules`; falls back to converting any legacy
+    HH:MM `schedule` entries so old configs keep working unchanged.
+    """
+    if not channel:
+        return []
+
+    rules = getattr(channel, "schedule_rules", None)
+    if rules:
+        return list(rules)
+
+    legacy_schedule = getattr(channel, "schedule", None)
+    if legacy_schedule:
+        try:
+            return [ScheduleRule(**rule) for rule in legacy_schedule_to_rules(legacy_schedule)]
+        except ValueError:
+            logger.warning("Ignoring invalid legacy HH:MM schedule payload", exc_info=True)
+
+    return []
+
+
+def _channel_enabled_expressions(channel: Optional[ChannelConfig]) -> List[str]:
+    """Cron expressions for a channel's enabled schedule rules."""
+    return [
+        rule.expression
+        for rule in _channel_schedule_rules(channel)
+        if rule.enabled and rule.expression.strip()
+    ]
+
+
+def _schedule_preview_lines(channel: Optional[ChannelConfig], limit: int = 8) -> List[str]:
+    """Human-readable schedule lines for printed receipts."""
+    lines: List[str] = []
+    for rule in _channel_schedule_rules(channel)[:limit]:
+        label = humanize_cron(rule.expression, settings.time_format)
+        if not rule.enabled:
+            label += " (off)"
+        lines.append(label)
+    return lines
 
 
 def _weather_prefetch_lead_seconds(module_id: str, scheduled_for: datetime) -> int:
@@ -344,16 +377,18 @@ async def _run_weather_prefetch_cycle(now: datetime) -> None:
 
     for channel in settings.channels.values():
         weather_modules = _iter_weather_modules_for_channel(channel)
-        if not weather_modules or not getattr(channel, "schedule", None):
+        if not weather_modules:
             continue
 
-        for schedule_time in channel.schedule:
-            scheduled_for = _parse_scheduled_datetime(now, schedule_time)
-            if scheduled_for is None:
-                continue
+        expressions = _channel_enabled_expressions(channel)
+        if not expressions:
+            continue
 
+        for scheduled_for in next_fire_times(
+            expressions, now, WEATHER_PREFETCH_MAX_LEAD_SECONDS
+        ):
             seconds_until = (scheduled_for - now).total_seconds()
-            if seconds_until <= 0 or seconds_until > WEATHER_PREFETCH_MAX_LEAD_SECONDS:
+            if seconds_until <= 0:
                 continue
 
             for module in weather_modules:
@@ -386,7 +421,10 @@ async def _run_weather_prefetch_cycle(now: datetime) -> None:
 
 async def scheduler_loop():
     """
-    Checks every minute if any channel is scheduled to run at the current time.
+    Evaluate channel cron schedules once per minute.
+
+    `current_datetime()` already returns time in the configured device
+    timezone, so cron expressions are matched against local wall-clock time.
     """
     last_run_minute = ""
 
@@ -396,26 +434,48 @@ async def scheduler_loop():
 
             now = current_datetime()
             await _run_weather_prefetch_cycle(now)
-            current_time = now.strftime("%H:%M")
+            current_time = now.strftime("%Y-%m-%d %H:%M")
 
-            # Prevent running multiple times in the same minute
+            # Evaluate each minute exactly once.
             if current_time == last_run_minute:
                 continue
 
             last_run_minute = current_time
 
-            # Check all channels for matching schedule
             for pos, channel in settings.channels.items():
-                if channel.schedule and current_time in channel.schedule:
+                for expression in _channel_enabled_expressions(channel):
+                    try:
+                        is_due = cron_matches_minute(expression, now)
+                    except Exception:
+                        logger.warning(
+                            "Skipping invalid cron rule for channel %s: '%s'",
+                            pos,
+                            expression,
+                        )
+                        continue
+
+                    if not is_due:
+                        continue
+
+                    logger.info(
+                        "Cron due for channel %s at %s: %s",
+                        pos,
+                        current_time,
+                        expression,
+                    )
+
                     if not _try_begin_print_job(debounce=False):
                         logger.info(
                             "Skipping scheduled print for channel %s because printer is busy or reserved.",
                             pos,
                         )
                         continue
+
                     await trigger_channel(pos, scheduled=True)
+                    break  # One print per channel per minute is enough.
 
         except Exception:
+            logger.exception("Scheduler loop encountered an unexpected error")
             await asyncio.sleep(60)
 
 
@@ -638,13 +698,15 @@ def _print_channel_config_summary(position: int):
             module_name = module.name if module else "(missing module)"
             printer.print_body(f"  {idx}. {module_name}")
 
-        if channel.schedule:
+        schedule_lines = _schedule_preview_lines(channel, limit=8)
+        if schedule_lines:
             printer.feed(1)
             printer.print_caption("Schedule:")
-            for schedule_time in channel.schedule[:8]:
-                printer.print_body(f"  - {schedule_time}")
-            if len(channel.schedule) > 8:
-                printer.print_caption(f"  +{len(channel.schedule) - 8} more")
+            for schedule_line in schedule_lines:
+                printer.print_body(f"  - {schedule_line}")
+            total_rules = len(_channel_schedule_rules(channel))
+            if total_rules > len(schedule_lines):
+                printer.print_caption(f"  +{total_rules - len(schedule_lines)} more")
         else:
             printer.feed(1)
             printer.print_caption("Schedule: none")
@@ -719,10 +781,12 @@ def _print_current_channel_and_menu(position: int):
             module = settings.modules.get(assignment.module_id)
             module_name = module.name if module else "(missing module)"
             printer.print_body(f"{idx}. {module_name}")
-        if channel.schedule:
-            printer.print_caption("Schedule: " + ", ".join(channel.schedule[:4]))
-            if len(channel.schedule) > 4:
-                printer.print_caption(f"+{len(channel.schedule) - 4} more times")
+        schedule_lines = _schedule_preview_lines(channel, limit=2)
+        if schedule_lines:
+            printer.print_caption("Schedule: " + "; ".join(schedule_lines))
+            total_rules = len(_channel_schedule_rules(channel))
+            if total_rules > len(schedule_lines):
+                printer.print_caption(f"+{total_rules - len(schedule_lines)} more rules")
         else:
             printer.print_caption("Schedule: none")
 
@@ -4422,18 +4486,50 @@ async def reorder_channel_modules(
     dependencies=[Depends(require_admin_access)],
 )
 async def update_channel_schedule(
-    position: int, schedule: List[str], background_tasks: BackgroundTasks
+    position: int,
+    background_tasks: BackgroundTasks,
+    payload: object = Body(...),
 ):
-    """Update the print schedule for a channel."""
+    """Update the print schedule for a channel.
+
+    Accepted payloads:
+    - Current: {"rules": [{"expression": "30 8 * * 1-5", "enabled": true}]}
+    - Legacy:  ["08:30", "18:00"] (HH:MM list, converted to cron rules)
+    """
     global settings
 
     if position not in settings.channels:
         settings.channels[position] = ChannelConfig(modules=[])
 
-    settings.channels[position].schedule = schedule
+    channel = settings.channels[position]
+
+    try:
+        if isinstance(payload, list):
+            times = [str(item).strip() for item in payload if str(item).strip()]
+            rule_payloads = legacy_schedule_to_rules(sorted(set(times)))
+        elif isinstance(payload, dict):
+            rules_value = payload.get("rules", [])
+            if not isinstance(rules_value, list):
+                raise ValueError("'rules' must be an array")
+            rule_payloads = normalize_schedule_rules(
+                [dict(rule) for rule in rules_value]
+            )
+        else:
+            raise ValueError("Schedule payload must be an array or object")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    channel.schedule_rules = [ScheduleRule(**rule) for rule in rule_payloads]
+    # Legacy HH:MM list is superseded once cron rules are written.
+    channel.schedule = []
+
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
 
-    return {"message": "Schedule updated", "channel": settings.channels[position]}
+    return {
+        "message": "Schedule updated",
+        "channel": channel,
+        "schedule_preview": _schedule_preview_lines(channel, limit=8),
+    }
 
 
 # --- EVENT ROUTER ---

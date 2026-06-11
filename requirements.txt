@@ -9,6 +9,7 @@ pytz
 python-dateutil
 astral
 beautifulsoup4
+croniter
 
 # Hardware drivers (optional - only needed on Raspberry Pi)
 pyserial

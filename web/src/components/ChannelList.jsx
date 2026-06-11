@@ -9,6 +9,7 @@ import ArrowUpIcon from '../assets/ArrowUpIcon';
 import ArrowDownIcon from '../assets/ArrowDownIcon';
 import WarningIcon from '../assets/WarningIcon';
 import { getModuleValidationIssueCount } from '../lib/moduleValidation';
+import { channelScheduleRuleCount } from '../utils';
 
 const ChannelList = ({
   settings,
@@ -410,22 +411,28 @@ const ChannelList = ({
                       title='Print Channel'>
                       <PrintIcon className='w-3.5 h-3.5 text-gray-400 group-hover:text-black transition-all' />
                     </button>
-                    <button
-                      type='button'
-                      onClick={() => setShowScheduleModal(pos)}
-                      className={`group flex items-center gap-1 px-2 py-1 rounded border-2 transition-all cursor-pointer ${
-                        channel.schedule && channel.schedule.length > 0
-                          ? 'bg-transparent shadow-sm'
-                          : 'bg-transparent border-gray-300 hover:border-black hover:bg-white'
-                      }`}
-                      style={channel.schedule && channel.schedule.length > 0 ? { color: 'var(--color-brass)', borderColor: 'var(--color-brass)' } : {}}
-                      onMouseEnter={(e) => { if (channel.schedule && channel.schedule.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-brass-10)'; }}
-                      onMouseLeave={(e) => { if (channel.schedule && channel.schedule.length > 0) e.currentTarget.style.backgroundColor = 'transparent'; }}
-                      aria-label={`Configure schedule for channel ${pos}`}
-                      title='Configure Schedule'>
-                      <ScheduleIcon className={`w-3.5 h-3.5 transition-all ${channel.schedule?.length > 0 ? '' : 'text-gray-400 group-hover:text-black'}`} style={channel.schedule?.length > 0 ? { color: 'var(--color-brass)' } : {}} />
-                      <span className={`text-xs font-bold ${channel.schedule?.length > 0 ? '' : 'text-gray-400 group-hover:text-black'}`} style={channel.schedule?.length > 0 ? { color: 'var(--color-brass)' } : {}}>{channel.schedule?.length || 0}</span>
-                    </button>
+                    {(() => {
+                      const scheduleCount = channelScheduleRuleCount(channel);
+                      const hasSchedules = scheduleCount > 0;
+                      return (
+                        <button
+                          type='button'
+                          onClick={() => setShowScheduleModal(pos)}
+                          className={`group flex items-center gap-1 px-2 py-1 rounded border-2 transition-all cursor-pointer ${
+                            hasSchedules
+                              ? 'bg-transparent shadow-sm'
+                              : 'bg-transparent border-gray-300 hover:border-black hover:bg-white'
+                          }`}
+                          style={hasSchedules ? { color: 'var(--color-brass)', borderColor: 'var(--color-brass)' } : {}}
+                          onMouseEnter={(e) => { if (hasSchedules) e.currentTarget.style.backgroundColor = 'var(--color-brass-10)'; }}
+                          onMouseLeave={(e) => { if (hasSchedules) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                          aria-label={`Configure schedule for channel ${pos}`}
+                          title='Configure Schedule'>
+                          <ScheduleIcon className={`w-3.5 h-3.5 transition-all ${hasSchedules ? '' : 'text-gray-400 group-hover:text-black'}`} style={hasSchedules ? { color: 'var(--color-brass)' } : {}} />
+                          <span className={`text-xs font-bold ${hasSchedules ? '' : 'text-gray-400 group-hover:text-black'}`} style={hasSchedules ? { color: 'var(--color-brass)' } : {}}>{scheduleCount}</span>
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className='flex gap-1'>
