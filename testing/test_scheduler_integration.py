@@ -36,7 +36,7 @@ def _run_one_scheduler_pass(monkeypatch, now, channels):
     monkeypatch.setattr(main_module.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(main_module, "trigger_channel", fake_trigger_channel)
     monkeypatch.setattr(main_module.settings, "channels", channels)
-    monkeypatch.setattr(main_module, "_try_begin_print_job", lambda debounce=False: True)
+    monkeypatch.setattr(main_module, "try_begin_print_job", lambda debounce=False: True)
     # Isolate from prefetch bookkeeping left behind by other tests.
     monkeypatch.setattr(main_module, "_weather_prefetch_state", {})
 
