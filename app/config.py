@@ -61,6 +61,16 @@ class EmailConfig(BaseModel):
     auto_print_new: bool = False  # Whether to automatically print new emails
 
 
+class SlackConfig(BaseModel):
+    """One Slack module instance = one Slack workspace (one Slack app)."""
+
+    model_config = ConfigDict(extra="ignore")
+    bot_token: str = ""  # xoxb-... (Bot User OAuth Token)
+    app_token: str = ""  # xapp-... (App-Level Token for Socket Mode)
+    auto_print_messages: bool = True  # Print DMs sent to the bot as they arrive
+    allowed_user_ids: str = ""  # Optional comma-separated Slack user IDs allow-list
+
+
 def _default_text_content_doc() -> Dict[str, Any]:
     return {"type": "doc", "content": [{"type": "paragraph"}]}
 

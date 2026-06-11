@@ -37,7 +37,12 @@ def format_text_receipt(printer: PrinterDriver, config: TextConfig, module_name:
     printer.print_caption(format_print_datetime())
     printer.print_line()
     
-    content_doc = _normalize_content_doc(config.content_doc)
+    print_rich_doc(printer, config.content_doc)
+
+
+def print_rich_doc(printer: PrinterDriver, content_doc: Any):
+    """Print a TipTap JSON document body (shared by Text/Note and Slack prints)."""
+    content_doc = _normalize_content_doc(content_doc)
 
     if _doc_has_visible_content(content_doc):
         _print_rich_doc(printer, content_doc)

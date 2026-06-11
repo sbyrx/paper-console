@@ -366,6 +366,12 @@ function App() {
         max_image_height_dots: 4096,
       },
       text: { content_doc: { type: 'doc', content: [{ type: 'paragraph' }] } },
+      slack: {
+        bot_token: '',
+        app_token: '',
+        auto_print_messages: true,
+        allowed_user_ids: '',
+      },
     };
     return defaults[moduleType] || {};
   };

@@ -7,6 +7,7 @@ import WebhookTest from './widgets/WebhookTest';
 import ActionButton from './widgets/ActionButton';
 import RichTextEditor from './widgets/RichTextEditor';
 import ImageWidget from './widgets/ImageWidget';
+import SlackHelp from './widgets/SlackHelp';
 import { generatePrintWebhookToken, normalizePrintWebhookEndpointPath } from '../utils';
 
 const copyToClipboard = async (text) => {
@@ -448,6 +449,10 @@ const SchemaField = ({
 
     if (widget === 'print-webhook-help') {
         return <PrintWebhookHelp rootValue={rootValue} />;
+    }
+
+    if (widget === 'slack-help') {
+        return <SlackHelp rootValue={rootValue} />;
     }
 
     if (widget === 'richtext') {
