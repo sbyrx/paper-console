@@ -395,6 +395,11 @@ def print_parsed_job(
                 "title": "Accept JSON print jobs",
                 "default": True,
             },
+            "print_when_channel_active": {
+                "type": "boolean",
+                "title": "Print incoming webhooks only when this channel is active. If set to false, incoming webhooks will be printed even if this module is not on the active dial channel.",
+                "default": True,
+            },
             "advanced_metadata": {
                 "type": "null",
                 "title": "Advanced",

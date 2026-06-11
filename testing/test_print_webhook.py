@@ -249,6 +249,33 @@ def test_receive_print_webhook_requires_active_channel(monkeypatch):
     assert excinfo.value.status_code == 503
 
 
+def test_receive_print_webhook_allows_request_when_not_active_but_channel_restriction_is_off(monkeypatch):
+    module = _print_module(print_when_channel_active=False)
+    monkeypatch.setattr(main_module.settings, "modules", {module.id: module})
+    # Module is assigned to channel 2
+    monkeypatch.setattr(
+        main_module.settings,
+        "channels",
+        {2: ChannelConfig(modules=[ChannelModuleAssignment(module_id=module.id, order=0)])},
+    )
+    # But the dial is currently on channel 1
+    monkeypatch.setattr(main_module.dial, "read_position", lambda: 1)
+    monkeypatch.setattr(main_module, "_try_begin_print_job", lambda debounce=False: True)
+
+    request = _make_request(
+        b"hello",
+        content_type="text/plain",
+        token=module.config["token"],
+    )
+    background_tasks = BackgroundTasks()
+
+    response = asyncio.run(
+        main_module.receive_print_webhook("front-door", request, background_tasks)
+    )
+
+    assert response.status_code == 202
+
+
 def test_receive_print_webhook_returns_423_when_printer_busy(monkeypatch):
     module = _print_module()
     monkeypatch.setattr(main_module.settings, "modules", {module.id: module})
