@@ -296,7 +296,7 @@ async def test_credentials(bot_token: str, app_token: str) -> Dict[str, Any]:
         return {"ok": False, "error": f"Bot token: {_friendly_slack_error(exc)}"}
 
     try:
-        await AsyncWebClient(token=app_token).apps_connections_open()
+        await AsyncWebClient().apps_connections_open(app_token=app_token)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"App token: {_friendly_slack_error(exc)}"}
 
