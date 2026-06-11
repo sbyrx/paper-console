@@ -125,8 +125,18 @@ from app.routers import wifi
 import app.device_password as device_password
 import app.wifi_manager as wifi_manager
 import app.hardware as hardware
-from app.hardware import printer, dial, button, _is_raspberry_pi
+from app.hardware import (
+    printer,
+    dial,
+    button,
+    _is_raspberry_pi,
+    try_begin_print_job,
+    reserve_hold_action,
+    promote_hold_to_print_job,
+    clear_print_reservation,
+)
 import app.location_lookup as location_lookup
+import app.slack_manager as slack_manager
 
 # --- BACKGROUND TASKS ---
 
@@ -177,6 +187,12 @@ async def task_watchdog():
         if scheduler_task is not None and scheduler_task.done():
             scheduler_task = asyncio.create_task(scheduler_loop())
 
+        # Safety net: retry errored Slack connections and pick up config drift.
+        try:
+            await slack_manager.reconcile()
+        except Exception:
+            logger.exception("Slack reconcile failed in watchdog")
+
 
 async def email_polling_loop():
     """
@@ -206,7 +222,7 @@ async def email_polling_loop():
             # Check each email module silently
             for module in email_modules:
                 try:
-                    if not _try_begin_print_job(debounce=False):
+                    if not try_begin_print_job(debounce=False):
                         logger.info(
                             "Skipping auto-print email poll for module_id=%s because printer is busy or reserved.",
                             getattr(module, "id", "unknown"),
@@ -246,7 +262,7 @@ async def email_polling_loop():
                         getattr(module, "id", "unknown"),
                     )
                 finally:
-                    _clear_print_reservation(clear_hold=False)
+                    clear_print_reservation(clear_hold=False)
 
         except Exception:
             logger.exception("Email polling loop encountered an unexpected error")
@@ -464,7 +480,7 @@ async def scheduler_loop():
                         expression,
                     )
 
-                    if not _try_begin_print_job(debounce=False):
+                    if not try_begin_print_job(debounce=False):
                         logger.info(
                             "Skipping scheduled print for channel %s because printer is busy or reserved.",
                             pos,
@@ -481,126 +497,17 @@ async def scheduler_loop():
 
 # --- HARDWARE CALLBACKS ---
 
-# Print state tracking with proper thread synchronization
-import threading
-
-print_lock = threading.Lock()
-print_in_progress = False
-hold_action_in_progress = False
-hold_action_started_at = 0.0
-last_print_time = 0.0
-PRINT_DEBOUNCE_SECONDS = 3.0  # Minimum time between print jobs
-HOLD_ACTION_TIMEOUT_SECONDS = 20.0
-
+# Print state tracking lives in app.hardware so any producer (button,
+# scheduler, email polling, webhooks, Slack) can share the same reservation.
 
 global_loop = None
-
-
-def _printer_reserved_locked() -> bool:
-    """Return True when the printer is reserved for a print or hold action."""
-    return print_in_progress or hold_action_in_progress
-
-
-def _expire_stale_hold_action_locked(current_time: float):
-    """Release a long-hold reservation if its matching release event was lost."""
-    global hold_action_in_progress, hold_action_started_at
-
-    if not hold_action_in_progress:
-        return
-    if (current_time - hold_action_started_at) < HOLD_ACTION_TIMEOUT_SECONDS:
-        return
-
-    hold_action_in_progress = False
-    hold_action_started_at = 0.0
-    logger.warning(
-        "Cleared stale hold reservation after %.1fs without a matching release.",
-        HOLD_ACTION_TIMEOUT_SECONDS,
-    )
-
-
-def _try_begin_print_job(*, debounce: bool = False) -> bool:
-    """Reserve the printer for a new print job."""
-    global print_in_progress, last_print_time
-    import time
-
-    with print_lock:
-        current_time = time.time()
-        _expire_stale_hold_action_locked(current_time)
-
-        if _printer_reserved_locked():
-            return False
-
-        if debounce and (current_time - last_print_time) < PRINT_DEBOUNCE_SECONDS:
-            return False
-
-        print_in_progress = True
-        last_print_time = current_time
-        return True
-
-
-def _reserve_hold_action() -> bool:
-    """Reserve the printer once the user crosses a long-hold threshold."""
-    global hold_action_in_progress, hold_action_started_at, last_print_time
-    import time
-
-    with print_lock:
-        current_time = time.time()
-        _expire_stale_hold_action_locked(current_time)
-
-        if print_in_progress:
-            return False
-
-        hold_action_in_progress = True
-        hold_action_started_at = current_time
-        last_print_time = current_time
-        return True
-
-
-def _promote_hold_to_print_job() -> bool:
-    """Convert a hold reservation into an active print job."""
-    global print_in_progress, hold_action_in_progress, hold_action_started_at, last_print_time
-    import time
-
-    with print_lock:
-        current_time = time.time()
-        _expire_stale_hold_action_locked(current_time)
-
-        if print_in_progress:
-            return False
-
-        hold_action_in_progress = False
-        hold_action_started_at = 0.0
-        print_in_progress = True
-        last_print_time = current_time
-        return True
-
-
-def _clear_print_reservation(*, clear_hold: bool = True):
-    """Release active print/hold reservations."""
-    global print_in_progress, hold_action_in_progress, hold_action_started_at, last_print_time
-    import time
-
-    with print_lock:
-        if print_in_progress:
-            # Start debounce from the end of the physical print window, not the start.
-            last_print_time = time.time()
-        print_in_progress = False
-        if clear_hold:
-            hold_action_in_progress = False
-            hold_action_started_at = 0.0
-
-    if hasattr(button, "drain_pending_events"):
-        try:
-            button.drain_pending_events()
-        except Exception:
-            logger.debug("Failed to drain button events after print completion", exc_info=True)
 
 
 def on_button_press_threadsafe():
     """Callback that schedules the trigger on the main event loop."""
     global global_loop
 
-    if not _try_begin_print_job(debounce=True):
+    if not try_begin_print_job(debounce=True):
         return
 
     try:
@@ -619,10 +526,10 @@ def on_button_press_threadsafe():
                 asyncio.run_coroutine_threadsafe(trigger_current_channel(), global_loop)
         else:
             # Loop not running, reset flag
-            _clear_print_reservation(clear_hold=False)
+            clear_print_reservation(clear_hold=False)
     except Exception:
         # Failed to schedule, reset flag
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
 
 
 async def handle_selection_async(dial_position: int):
@@ -645,29 +552,29 @@ async def handle_selection_async(dial_position: int):
             await loop.run_in_executor(executor, _do_selection)
     finally:
         # Always mark print as complete
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
 
 
 def on_button_long_press_threadsafe():
     """Callback for long press (5 seconds) - opens quick actions menu."""
     global global_loop
 
-    if not _promote_hold_to_print_job() and not _try_begin_print_job(debounce=False):
+    if not promote_hold_to_print_job() and not try_begin_print_job(debounce=False):
         return
 
     try:
         if global_loop and global_loop.is_running():
             asyncio.run_coroutine_threadsafe(long_press_menu_trigger(), global_loop)
         else:
-            _clear_print_reservation()
+            clear_print_reservation()
     except Exception:
-        _clear_print_reservation()
+        clear_print_reservation()
 
 
 def on_button_long_press_ready_threadsafe():
     """Callback fired at 5s hold threshold to signal 'you can release now'."""
     try:
-        _reserve_hold_action()
+        reserve_hold_action()
         # Half-line tactile feed cue.
         if hasattr(printer, "feed_dots"):
             printer.feed_dots(12)
@@ -925,7 +832,7 @@ async def long_press_menu_trigger():
             await loop.run_in_executor(executor, _initial_print)
     except Exception:
         logger.exception("Failed to render long-press menu")
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
         return
 
     def _handle_quick_action(dial_position: int):
@@ -986,7 +893,7 @@ async def long_press_menu_trigger():
         valid_positions={1, 2, 3, 4, 5, 8},
     )
     # Release lock only after quick-actions selection mode is fully active.
-    _clear_print_reservation(clear_hold=False)
+    clear_print_reservation(clear_hold=False)
 
     async def _auto_exit_quick_actions_after_timeout(module_id: str):
         """Auto-exit quick actions if no selection is made within timeout."""
@@ -1361,20 +1268,20 @@ async def factory_reset_trigger():
             except Exception:
                 logger.exception("Factory reset fallback AP-mode recovery failed")
     finally:
-        _clear_print_reservation()
+        clear_print_reservation()
 
 
 def on_factory_reset_threadsafe():
     """Callback for factory reset press (15+ seconds)."""
     global global_loop
-    if not _promote_hold_to_print_job() and not _try_begin_print_job(debounce=False):
+    if not promote_hold_to_print_job() and not try_begin_print_job(debounce=False):
         logger.info("Ignoring factory reset hold because printer is already busy.")
         return
 
     if global_loop and global_loop.is_running():
         asyncio.run_coroutine_threadsafe(factory_reset_trigger(), global_loop)
     else:
-        _clear_print_reservation()
+        clear_print_reservation()
 
 
 @asynccontextmanager
@@ -1425,6 +1332,10 @@ async def lifespan(app: FastAPI):
     scheduler_task = asyncio.create_task(scheduler_loop())
     task_monitor_task = asyncio.create_task(task_watchdog())
 
+    # Connect Slack workspaces for any configured Slack modules.
+    slack_manager.init_runtime(trigger_channel)
+    asyncio.create_task(slack_manager.reconcile())
+
     # Initialize Main Button Callbacks
     # Short press = Print
     button.set_callback(on_button_press_threadsafe)
@@ -1448,6 +1359,11 @@ async def lifespan(app: FastAPI):
                 pass
             except Exception:
                 logger.exception("Background task shutdown failed")
+
+    try:
+        await slack_manager.shutdown()
+    except Exception:
+        logger.exception("Slack shutdown failed")
 
     # Cleanup hardware drivers
     if hasattr(printer, "close"):
@@ -1563,6 +1479,14 @@ async def health_check():
     health["components"]["task_monitor"] = (
         "running" if task_monitor_task and not task_monitor_task.done() else "stopped"
     )
+
+    # Per-module Slack connection status (only present when Slack modules exist)
+    slack_statuses = slack_manager.get_statuses()
+    if slack_statuses:
+        health["components"]["slack"] = {
+            module_id: status.get("status", "unknown")
+            for module_id, status in slack_statuses.items()
+        }
 
     # Check WiFi status
     try:
@@ -1687,6 +1611,9 @@ async def update_settings(new_settings: Settings, background_tasks: BackgroundTa
     # Save to disk
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
 
+    # Reconnect/disconnect Slack workspaces if Slack modules changed.
+    background_tasks.add_task(slack_manager.reconcile)
+
     response = {"message": "Settings saved", "config": settings}
     if timezone_changed:
         timezone_sync = _sync_system_timezone(settings.timezone)
@@ -1753,6 +1680,7 @@ async def import_settings(
     config_module.settings = settings
     validation_warnings = _collect_settings_validation_warnings(settings)
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
+    background_tasks.add_task(slack_manager.reconcile)
 
     response = {
         "message": "Configuration imported",
@@ -1782,6 +1710,7 @@ async def reset_settings(background_tasks: BackgroundTasks):
 
     # Save to disk (overwriting existing config.json)
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
+    background_tasks.add_task(slack_manager.reconcile)
 
     return {"message": "Settings reset to defaults", "config": settings}
 
@@ -1797,6 +1726,8 @@ async def reload_settings():
     # Update in-memory globals
     settings = new_settings
     config_module.settings = settings
+
+    asyncio.create_task(slack_manager.reconcile())
 
     return {"message": "Settings reloaded from disk", "config": settings}
 
@@ -4289,6 +4220,7 @@ async def create_module(module: ModuleInstance, background_tasks: BackgroundTask
     )
     settings.modules[module.id] = module
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
+    background_tasks.add_task(slack_manager.reconcile)
 
     return {"message": "Module created", "module": module}
 
@@ -4329,6 +4261,8 @@ async def update_module(
     # Update module-level reference so modules that access app.config.settings will see the update
     config_module.settings = settings
 
+    background_tasks.add_task(slack_manager.reconcile)
+
     return {"message": "Module updated", "module": module}
 
 
@@ -4356,6 +4290,7 @@ async def delete_module(module_id: str, background_tasks: BackgroundTasks):
 
     del settings.modules[module_id]
     background_tasks.add_task(save_settings_background, settings.model_copy(deep=True))
+    background_tasks.add_task(slack_manager.reconcile)
 
     return {"message": "Module deleted"}
 
@@ -4820,7 +4755,7 @@ async def trigger_channel(position: int, *, scheduled: bool = False):
             await loop.run_in_executor(executor, _do_print)
     finally:
         # Always mark print as complete (thread-safe)
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
 
 
 async def trigger_current_channel():
@@ -4835,13 +4770,13 @@ async def trigger_current_channel():
 @app.post("/action/trigger", dependencies=[Depends(require_admin_access)])
 async def manual_trigger():
     """Simulates pressing the big brass button."""
-    if not _try_begin_print_job(debounce=False):
+    if not try_begin_print_job(debounce=False):
         raise HTTPException(status_code=409, detail="Print already in progress")
 
     try:
         await trigger_current_channel()
     finally:
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
     return {"message": "Triggered"}
 
 
@@ -4866,7 +4801,7 @@ async def print_channel(position: int, background_tasks: BackgroundTasks):
     if position < 1 or position > 8:
         raise HTTPException(status_code=400, detail="Position must be 1-8")
 
-    if not _try_begin_print_job(debounce=False):
+    if not try_begin_print_job(debounce=False):
         raise HTTPException(status_code=409, detail="Print already in progress")
 
     # Run print in background and return immediately
@@ -4888,7 +4823,7 @@ async def print_module(module_id: str, background_tasks: BackgroundTasks):
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    if not _try_begin_print_job(debounce=False):
+    if not try_begin_print_job(debounce=False):
         raise HTTPException(status_code=409, detail="Print already in progress")
 
     # Run print in background and return immediately
@@ -4939,7 +4874,7 @@ async def print_module_direct(module_id: str):
             await loop.run_in_executor(executor, _do_print)
     finally:
         # Always mark print as complete (thread-safe)
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
 
 def _print_print_webhook_job_sync(module_id: str, job: dict) -> None:
     print_webhook_service.print_job(
@@ -4955,7 +4890,7 @@ async def _run_print_webhook_print_job(module_id: str, job: dict) -> None:
     try:
         await asyncio.to_thread(_print_print_webhook_job_sync, module_id, job)
     finally:
-        _clear_print_reservation(clear_hold=False)
+        clear_print_reservation(clear_hold=False)
 
 
 @app.post("/hook/{endpoint_path:path}")
@@ -4984,7 +4919,7 @@ async def receive_print_webhook(
         body=body,
     )
 
-    if not _try_begin_print_job(debounce=False):
+    if not try_begin_print_job(debounce=False):
         raise HTTPException(status_code=423, detail="Printer is already busy")
 
     background_tasks.add_task(
@@ -4997,6 +4932,17 @@ async def receive_print_webhook(
         status_code=202,
         media_type="application/json",
     )
+
+
+class SlackTestRequest(BaseModel):
+    bot_token: str = ""
+    app_token: str = ""
+
+
+@app.post("/api/slack/test", dependencies=[Depends(require_admin_access)])
+async def test_slack(payload: SlackTestRequest):
+    """Validate a Slack bot/app token pair without touching live connections."""
+    return await slack_manager.test_credentials(payload.bot_token, payload.app_token)
 
 
 @app.post("/debug/test-webhook", dependencies=[Depends(require_admin_access)])

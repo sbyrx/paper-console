@@ -78,6 +78,28 @@ export const getModuleValidationErrors = (module) => {
     }
   }
 
+  if (module?.type === 'slack') {
+    const botToken = String(config.bot_token || '').trim();
+    const appToken = String(config.app_token || '').trim();
+
+    if (!botToken) {
+      errors.bot_token = 'Bot token is required.';
+    } else if (!botToken.startsWith('xoxb-')) {
+      errors.bot_token = 'Bot tokens start with xoxb-.';
+    }
+
+    if (!appToken) {
+      errors.app_token = 'App-level token is required.';
+    } else if (!appToken.startsWith('xapp-')) {
+      errors.app_token = 'App-level tokens start with xapp-.';
+    }
+
+    const allowedIds = String(config.allowed_user_ids || '').trim();
+    if (allowedIds && !/^[A-Za-z0-9,\s]+$/.test(allowedIds)) {
+      errors.allowed_user_ids = 'Use comma-separated Slack member IDs (e.g. U0123ABC).';
+    }
+  }
+
   if (module?.type === 'print_webhook') {
     const endpointPath = String(config.endpoint_path || '').trim();
     const enabledTypes = [config.accept_text, config.accept_images, config.accept_json].some(Boolean);

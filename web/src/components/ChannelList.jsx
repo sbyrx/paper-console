@@ -56,6 +56,8 @@ const ChannelList = ({
         return Array.isArray(cfg.rss_feeds) && cfg.rss_feeds.some((f) => isNonEmptyString(String(f || '')));
       case 'email':
         return isNonEmptyString(cfg.email_user) && isNonEmptyString(cfg.email_password);
+      case 'slack':
+        return isNonEmptyString(cfg.bot_token) && isNonEmptyString(cfg.app_token);
       case 'calendar':
         return Array.isArray(cfg.ical_sources) && cfg.ical_sources.some((s) => isNonEmptyString(s?.url));
       case 'webhook':

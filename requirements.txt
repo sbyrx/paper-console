@@ -15,3 +15,7 @@ croniter
 pyserial
 qrcode[pil]
 jsonschema
+
+# Slack module (Socket Mode connection to Slack workspaces)
+slack_bolt
+aiohttp
