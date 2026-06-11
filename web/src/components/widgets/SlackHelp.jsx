@@ -3,9 +3,55 @@ import GCheckIcon from '../../assets/GCheckIcon';
 import WarningIcon from '../../assets/WarningIcon';
 import { adminAuthFetch } from '../../lib/adminAuthFetch';
 
+const APP_MANIFEST = {
+  display_information: {
+    name: 'PC-1 Printer',
+    description: 'Print Slack messages on your Paper Console',
+    background_color: '#000000',
+  },
+  features: {
+    app_home: {
+      messages_tab_enabled: true,
+      messages_tab_read_only_enabled: false,
+    },
+    bot_user: {
+      display_name: 'pc1_printer',
+      always_online: true,
+    },
+    slash_commands: [
+      {
+        command: '/channels',
+        description: 'List PC-1 dial channels',
+        should_escape: false,
+      },
+      {
+        command: '/channel',
+        description: 'Print a PC-1 channel',
+        usage_hint: '[1-8]',
+        should_escape: false,
+      },
+    ],
+  },
+  oauth_config: {
+    scopes: {
+      bot: ['chat:write', 'im:history', 'reactions:write', 'users:read', 'files:read'],
+    },
+  },
+  settings: {
+    event_subscriptions: {
+      bot_events: ['message.im'],
+    },
+    org_deploy_enabled: false,
+    socket_mode_enabled: true,
+    token_rotation_enabled: false,
+  },
+};
+
+const MANIFEST_JSON = JSON.stringify(APP_MANIFEST, null, 2);
+
 const SETUP_STEPS = [
   <>
-    Create a Slack app for your workspace at{' '}
+    Copy the app manifest below, then go to{' '}
     <a
       href="https://api.slack.com/apps"
       target="_blank"
@@ -14,38 +60,28 @@ const SETUP_STEPS = [
     >
       api.slack.com/apps
     </a>{' '}
-    (From scratch).
+    → <strong>Create New App</strong> → <strong>From a manifest</strong>. Pick
+    your workspace, paste the manifest (JSON tab), and create the app. This
+    configures all permissions, events, and slash commands automatically.
   </>,
   <>
-    Under <strong>Socket Mode</strong>, enable Socket Mode and create an
-    App-Level Token with the <code className="bg-white px-1 py-0.5 rounded">connections:write</code>{' '}
-    scope. That token (xapp-...) goes in the App-Level Token field above.
+    Under <strong>Basic Information → App-Level Tokens</strong>, click{' '}
+    <strong>Generate Token and Scopes</strong>, add the{' '}
+    <code className="bg-white px-1 py-0.5 rounded">connections:write</code>{' '}
+    scope, and generate. Paste the token (xapp-...) into the App-Level Token
+    field above.
   </>,
   <>
-    Under <strong>OAuth &amp; Permissions</strong>, add these Bot Token Scopes:{' '}
-    <code className="bg-white px-1 py-0.5 rounded">chat:write</code>,{' '}
-    <code className="bg-white px-1 py-0.5 rounded">im:history</code>,{' '}
-    <code className="bg-white px-1 py-0.5 rounded">reactions:write</code>,{' '}
-    <code className="bg-white px-1 py-0.5 rounded">users:read</code>,{' '}
-    <code className="bg-white px-1 py-0.5 rounded">files:read</code>. Then
-    install the app to your workspace and copy the Bot User OAuth Token
-    (xoxb-...) into the field above.
+    Under <strong>Install App</strong> (or the banner at the top), install the
+    app to your workspace, then copy the Bot User OAuth Token (xoxb-...) into
+    the field above.
   </>,
   <>
-    Under <strong>Event Subscriptions</strong>, enable events and add{' '}
-    <code className="bg-white px-1 py-0.5 rounded">message.im</code> under
-    Subscribe to bot events.
-  </>,
-  <>
-    Optional: under <strong>Slash Commands</strong>, create{' '}
-    <code className="bg-white px-1 py-0.5 rounded">/channels</code> (lists dial
-    channels) and <code className="bg-white px-1 py-0.5 rounded">/channel</code>{' '}
-    (prints a channel, e.g. /channel 3). Any request URL works - PC-1 uses
-    Socket Mode.
-  </>,
-  <>
-    In Slack, open the app's <strong>Messages</strong> tab and send it a DM.
-    Text, links, and images all print. Links print as QR codes.
+    In Slack, open the app's <strong>Messages</strong> tab (find it under Apps,
+    or press Cmd/Ctrl+K and search for the bot) and send it a DM. Text, links,
+    and images all print. Links print as QR codes, and{' '}
+    <code className="bg-white px-1 py-0.5 rounded">/channel 3</code> prints
+    dial channel 3.
   </>,
 ];
 
@@ -56,9 +92,32 @@ const SETUP_STEPS = [
 const SlackHelp = ({ rootValue = {} }) => {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   const botToken = String(rootValue.bot_token || '').trim();
   const appToken = String(rootValue.app_token || '').trim();
+
+  const copyManifest = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(MANIFEST_JSON);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = MANIFEST_JSON;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch (error) {
+      console.error('Failed to copy Slack app manifest:', error);
+    }
+  };
 
   const handleTest = async () => {
     setTesting(true);
@@ -133,6 +192,23 @@ const SlackHelp = ({ rootValue = {} }) => {
             </li>
           ))}
         </ol>
+
+        <div className="space-y-1 pt-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-bold text-black uppercase tracking-wide">App Manifest</div>
+            <button
+              type="button"
+              onClick={copyManifest}
+              className="text-xs px-2 py-1 border-2 border-gray-300 rounded-lg hover:border-black transition-colors"
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <pre className="overflow-x-auto rounded border border-zinc-200 bg-white p-3 text-[11px] leading-4 text-zinc-700 whitespace-pre max-h-48 overflow-y-auto">
+            {MANIFEST_JSON}
+          </pre>
+        </div>
+
         <p className="text-xs text-zinc-500 leading-5 pt-1">
           Messages print as they arrive, even when this module is not on the
           active dial channel. Pressing the print button on a channel with this
