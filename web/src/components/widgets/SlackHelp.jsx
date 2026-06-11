@@ -185,9 +185,8 @@ const SlackHelp = ({ rootValue = {} }) => {
       </div>
 
       <p className="text-xs text-zinc-500 leading-5">
-        Messages print as they arrive, even when this module is not on the
-        active dial channel. Pressing the print button on a channel with this
-        module prints a connection status receipt.
+        Pressing the print button on a channel with this module prints a
+        connection status receipt.
       </p>
 
       <button
