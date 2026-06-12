@@ -95,7 +95,7 @@ def normalize_module_config(
     else:
         config["endpoint_path"] = slugify_endpoint(str(config["endpoint_path"]))
 
-    for key in ("accept_text", "accept_images", "accept_json"):
+    for key in ("accept_text", "accept_images", "accept_json", "print_when_channel_active"):
         if key not in config:
             config[key] = True
 
@@ -205,7 +205,7 @@ def resolve_incoming_target(
     if config.token and bearer_token != config.token:
         raise HTTPException(status_code=401, detail="Invalid bearer token")
 
-    if not _module_is_assigned_to_current_channel(channels, dial_position, module.id):
+    if config.print_when_channel_active and not _module_is_assigned_to_current_channel(channels, dial_position, module.id):
         raise HTTPException(
             status_code=503,
             detail="Print webhook module is not on the active channel",

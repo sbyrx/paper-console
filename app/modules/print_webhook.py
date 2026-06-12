@@ -370,6 +370,12 @@ def print_parsed_job(
         "type": "object",
         "description": "Print incoming requests immediately when this module is on the active dial channel.",
         "properties": {
+            "print_when_channel_active": {
+                "type": "boolean",
+                "title": "Restrict to active channel",
+                "description": "Only prints when dial is on the correct channel",
+                "default": True,
+            },
             "endpoint_path": {
                 "type": "string",
                 "title": "Endpoint Path",

@@ -33,6 +33,7 @@ class PrintWebhookConfig(BaseModel):
     accept_text: bool = True
     accept_images: bool = True
     accept_json: bool = True
+    print_when_channel_active: bool = True
     max_image_height_dots: int = 4096
     print_header: Optional[str] = None
     print_sender_ip: bool = False
